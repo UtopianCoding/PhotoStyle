@@ -1,0 +1,23 @@
+# 老照片复兴（Photo Revival）参数化提示词模板
+#
+# 占位符说明（由 SkillEngine / PromptBuilder 在运行时替换）：
+#   {{subject}}        - 主体（来自图片分析，如 cat / person / building）
+#   {{scene}}          - 场景（如 indoor / outdoor / night）
+#   {{mood}}           - 情绪关键词（如 quiet / warm / lively）
+#   {{composition}}    - 构图（如 close-up / wide-shot）
+#   {{colors}}         - 主色调列表（逗号分隔）
+#   {{ratio}}          - 输出比例（默认 3:4）
+#   {{subject_ratio}}  - 主体占比（默认 10-16%）
+#   {{num_results}}    - 生成数量
+#   {{extra_prompt}}   - 用户额外补充要求
+#
+# 用法：PromptBuilder 会将本模板与图片分析结果、风格选项、用户补充要求
+# 拼接为最终提示词。本文件仅作模板参考，实际渲染逻辑见 prompt_builder.py。
+
+A hand-drawn illustration on white paper, vertical {{ratio}} composition.
+The subject ({{subject}}) occupies {{subject_ratio}} of the canvas, placed near the upper third.
+80-88% of the canvas is left as clean white paper with subtle paper texture.
+Minimalist hand-drawn line art style, delicate ink outlines with light watercolor wash.
+Scene: {{scene}}. Mood: {{mood}}. Composition: {{composition}}. Dominant colors: {{colors}}.
+Lots of negative space, breathing composition, elegant revival aesthetic.
+Keep the subject recognizable and faithful to the original content.

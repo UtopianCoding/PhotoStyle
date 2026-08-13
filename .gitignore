@@ -1,0 +1,117 @@
+# ====================================================================
+# PhotoStyle .gitignore
+# 敏感配置文件通过 .env.example 作为模板提交，真实 .env 保留在本地
+# ====================================================================
+
+# ---------- 环境变量与密钥（不提交） ----------
+.env
+.env.local
+.env.*.local
+.env.docker
+server/.env
+web/.env
+web/.env.local
+web/.env.*.local
+*.key
+*.pem
+*.p12
+secrets.json
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.coverage.*
+*.cover
+.hypothesis/
+
+# ---------- Node / 前端 ----------
+node_modules/
+web/node_modules/
+web/dist/
+web/dist-ssr/
+.npm-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# 自动生成的类型文件（按需保留）
+# web/src/auto-imports.d.ts
+# web/src/components.d.ts
+
+# ---------- IDE / 编辑器 ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbnails.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ---------- 日志与临时文件 ----------
+*.log
+logs/
+*.tmp
+*.bak
+*.cache
+
+# ---------- 数据库与上传文件 ----------
+*.sqlite
+*.sqlite3
+*.db
+uploads/
+media/
+
+# ---------- 构建产物 ----------
+*.pid
+*.seed
+*.pid.lock
+
+# ---------- Docker 数据卷 ----------
+docker-data/
+mysql_data/
+redis_data/
+minio_data/

@@ -1,0 +1,434 @@
+<script setup lang="ts">
+// 首页：上传照片 → 查看示例 → 分析图片 → 选择诗意小字 → 一键生成手绘插画
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import ImageUploader from '@/components/uploader/ImageUploader.vue'
+import ExampleCarousel from '@/components/style/ExampleCarousel.vue'
+import { useImageStore } from '@/stores/image'
+import { useStyleStore } from '@/stores/style'
+import { useConvert } from '@/composables/useConvert'
+
+const router = useRouter()
+const imageStore = useImageStore()
+const styleStore = useStyleStore()
+const { converting, analyze, convert } = useConvert()
+
+/** 分析图片 */
+async function onAnalyze() {
+  await analyze()
+}
+
+/** 提交转换 */
+async function onConvert() {
+  const task = await convert()
+  if (task) {
+    ElMessage.success('任务已提交，正在转换...')
+    router.push(`/result/${task.taskId}`)
+  }
+}
+</script>
+
+<template>
+  <div class="home-flow mx-auto max-w-3xl px-4 py-10">
+    <!-- 诗意标题 -->
+    <section class="hero ink-fade">
+      <div class="hero__seal-wrap">
+        <span class="hero__seal">影</span>
+      </div>
+      <h1 class="hero__title font-display">把照片画成一页诗</h1>
+      <p class="hero__subtitle">上传照片，AI 分析生成提示词，一键生成手绘复兴插画</p>
+    </section>
+
+    <!-- 上传区 -->
+    <section class="notebook-section ink-fade ink-fade--delay-1">
+      <h2 class="notebook-section__label font-display">
+        <span class="ink-stamp">壹</span>
+        <span>上传照片</span>
+      </h2>
+      <ImageUploader />
+    </section>
+
+    <!-- 示例效果图（轮播） -->
+    <section class="notebook-section ink-fade ink-fade--delay-2">
+      <h2 class="notebook-section__label font-display">
+        <span class="ink-stamp">贰</span>
+        <span>示例效果</span>
+      </h2>
+      <ExampleCarousel />
+    </section>
+
+    <!-- 分析按钮 -->
+    <div class="convert-action">
+      <button
+        class="analyze-btn font-display"
+        :disabled="styleStore.analyzing || !imageStore.imageId"
+        @click="onAnalyze"
+      >
+        <span v-if="!styleStore.analyzing">分析图片</span>
+        <span v-else class="convert-btn__loading">AI 分析中…</span>
+      </button>
+    </div>
+
+    <!-- 分析结果展示 -->
+    <section v-if="styleStore.analysisResult" class="notebook-section analysis-result ink-fade">
+      <h2 class="notebook-section__label font-display">
+        <span class="ink-stamp">叁</span>
+        <span>分析结果</span>
+      </h2>
+
+      <!-- 主体识别 -->
+      <div class="analysis-block">
+        <h3 class="analysis-block__title">照片主体识别</h3>
+        <p class="analysis-block__text">{{ styleStore.analysisResult.subjectAnalysis }}</p>
+      </div>
+
+      <!-- 核心元素 -->
+      <div v-if="styleStore.analysisResult.coreElements.length" class="analysis-block">
+        <h3 class="analysis-block__title">需要保留的核心元素</h3>
+        <ul class="analysis-list">
+          <li v-for="(el, i) in styleStore.analysisResult.coreElements" :key="i">{{ el }}</li>
+        </ul>
+      </div>
+
+      <!-- 插画规则 -->
+      <div v-if="styleStore.analysisResult.rules" class="analysis-block">
+        <h3 class="analysis-block__title">插画规则</h3>
+        <div class="rules-grid">
+          <div v-if="styleStore.analysisResult.rules.composition" class="rule-item">
+            <span class="rule-label">构图</span>
+            <span class="rule-value">{{ styleStore.analysisResult.rules.composition }}</span>
+          </div>
+          <div v-if="styleStore.analysisResult.rules.mainArea" class="rule-item">
+            <span class="rule-label">主体区域</span>
+            <span class="rule-value">{{ styleStore.analysisResult.rules.mainArea }}</span>
+          </div>
+          <div v-if="styleStore.analysisResult.rules.negativeSpace" class="rule-item">
+            <span class="rule-label">留白</span>
+            <span class="rule-value">{{ styleStore.analysisResult.rules.negativeSpace }}</span>
+          </div>
+          <div v-if="styleStore.analysisResult.rules.style" class="rule-item">
+            <span class="rule-label">笔触</span>
+            <span class="rule-value">{{ styleStore.analysisResult.rules.style }}</span>
+          </div>
+          <div v-if="styleStore.analysisResult.rules.colors?.length" class="rule-item">
+            <span class="rule-label">色彩</span>
+            <span class="rule-value">{{ styleStore.analysisResult.rules.colors.join('、') }}</span>
+          </div>
+          <div v-if="styleStore.analysisResult.rules.avoid" class="rule-item">
+            <span class="rule-label">避免</span>
+            <span class="rule-value">{{ styleStore.analysisResult.rules.avoid }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 特殊元素处理 -->
+      <div v-if="styleStore.analysisResult.specialNotes" class="analysis-block">
+        <h3 class="analysis-block__title">特殊元素处理</h3>
+        <p class="analysis-block__text">{{ styleStore.analysisResult.specialNotes }}</p>
+      </div>
+
+      <!-- 最终提示词 -->
+      <div class="analysis-block">
+        <h3 class="analysis-block__title">最终生成提示词（英文）</h3>
+        <div class="prompt-box">{{ styleStore.analysisResult.finalPrompt }}</div>
+      </div>
+
+      <!-- 诗意小字选择 -->
+      <div v-if="styleStore.analysisResult.poeticOptions.length" class="analysis-block">
+        <h3 class="analysis-block__title">诗意小字</h3>
+        <p class="analysis-block__hint">选择一句小字写在画面下方（可不选）</p>
+        <div class="poetic-options">
+          <button
+            v-for="opt in styleStore.analysisResult.poeticOptions"
+            :key="opt"
+            class="poetic-chip"
+            :class="{ 'poetic-chip--active': styleStore.selectedPoeticText === opt }"
+            @click="styleStore.setPoeticText(styleStore.selectedPoeticText === opt ? '' : opt)"
+          >
+            {{ opt }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 提交转换按钮 -->
+    <div v-if="styleStore.analysisResult" class="convert-action">
+      <button
+        class="convert-btn font-display"
+        :disabled="converting || !styleStore.analysisResult"
+        @click="onConvert"
+      >
+        <span v-if="!converting">开始转换</span>
+        <span v-else class="convert-btn__loading">生成中…</span>
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+/* 整体如笔记本纵向流动，章节间以温暖细分隔线区分 */
+.home-flow {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 诗意标题：居中、大留白，宋体质感，顶部朱印点睛 */
+.hero {
+  text-align: center;
+  padding: 56px 0 64px;
+}
+.hero__seal-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.hero__seal {
+  width: 48px;
+  height: 48px;
+  border-radius: 5px;
+  background: var(--color-primary);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 48px;
+  text-align: center;
+  box-shadow: var(--shadow-seal);
+  position: relative;
+}
+.hero__seal::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+}
+.hero__title {
+  font-size: 2.25rem; /* text-4xl */
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+}
+.hero__subtitle {
+  margin-top: 14px;
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
+}
+
+/* 章节块：无卡片阴影，仅以细线分隔，留白即结构 */
+.notebook-section {
+  padding: 36px 0;
+  border-top: 1px solid rgba(156, 150, 139, 0.15);
+}
+.notebook-section:first-of-type {
+  border-top: none;
+}
+.notebook-section__label {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 18px;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 朱砂转换按钮：纸面上的唯一强调标点 */
+.convert-action {
+  text-align: center;
+  padding: 44px 0 28px;
+}
+.convert-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 13px 40px;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(200, 68, 43, 0.28);
+  transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+}
+.convert-btn:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+  box-shadow: 0 6px 20px rgba(168, 54, 31, 0.32);
+}
+.convert-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 8px rgba(168, 54, 31, 0.24);
+}
+.convert-btn:disabled {
+  background: rgba(156, 150, 139, 0.5);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.convert-btn__loading {
+  opacity: 0.9;
+}
+
+/* 分析按钮：墨色描边，区别于朱砂转换按钮 */
+.analyze-btn {
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text);
+  border: 1.5px solid var(--color-text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 11px 36px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+.analyze-btn:hover:not(:disabled) {
+  background: var(--color-text);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.analyze-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.analyze-btn:disabled {
+  border-color: rgba(156, 150, 139, 0.4);
+  color: rgba(156, 150, 139, 0.6);
+  cursor: not-allowed;
+}
+
+/* 分析结果区域 */
+.analysis-result {
+  padding: 24px;
+  background: rgba(245, 242, 235, 0.5);
+  border-radius: 12px;
+  border: 1px solid rgba(156, 150, 139, 0.12);
+}
+.analysis-block {
+  margin-bottom: 20px;
+}
+.analysis-block:last-child {
+  margin-bottom: 0;
+}
+.analysis-block__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 8px;
+  letter-spacing: 0.04em;
+}
+.analysis-block__text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+.analysis-block__hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+.analysis-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.analysis-list li {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  padding: 3px 0;
+  padding-left: 16px;
+  position: relative;
+}
+.analysis-list li::before {
+  content: "·";
+  position: absolute;
+  left: 4px;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+/* 规则网格 */
+.rules-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.rule-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rule-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+.rule-value {
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+/* 提示词展示框 */
+.prompt-box {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: #fff;
+  border: 1px solid rgba(156, 150, 139, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* 诗意小字选项 */
+.poetic-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.poetic-chip {
+  appearance: none;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid rgba(156, 150, 139, 0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  transition: all 0.2s ease;
+  font-family: var(--font-display, serif);
+}
+.poetic-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.poetic-chip--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* 移动端：标题与留白收敛 */
+@media (max-width: 640px) {
+  .hero {
+    padding: 32px 0 40px;
+  }
+  .hero__title {
+    font-size: 1.75rem;
+  }
+  .notebook-section {
+    padding: 24px 0;
+  }
+}
+</style>

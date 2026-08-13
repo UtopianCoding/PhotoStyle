@@ -1,0 +1,25 @@
+# 城市风景海报（City Editorial Poster）参数化提示词模板
+#
+# 占位符说明（由 SkillEngine / PromptBuilder 在运行时替换）：
+#   {{subject}}        - 主体（城市天际线 / 古建 / 山川湖泊 / 街道夜景等）
+#   {{scene}}          - 场景（如 outdoor-city / night / day / misty）
+#   {{mood}}           - 情绪关键词（如 quiet / serene / nostalgic / cinematic）
+#   {{composition}}    - 构图（如 wide-shot / skyline-view / street-level）
+#   {{colors}}         - 主色调列表（逗号分隔）
+#   {{ratio}}          - 输出比例（默认 2:3）
+#   {{subject_ratio}}  - 主体占比（默认 50%）
+#   {{num_results}}    - 生成数量
+#   {{extra_prompt}}   - 用户额外补充要求
+#
+# 用法：PromptBuilder 会将本模板与图片分析结果、风格选项、用户补充要求
+# 拼接为最终提示词。本文件仅作模板参考，实际渲染逻辑见 prompt_builder.py。
+
+Vertical editorial poster, {{ratio}} ratio, split composition — top half and bottom half.
+
+Top half (50%): Preserve the original real photograph composition exactly. Subject: {{subject}}. Cinematic color grading only: desaturate, muted and quiet palette in blue-grey, warm yellow, warm ivory. Keep real photo texture, natural sky, architectural structure, lights, clouds, moon, or main subject unchanged. No HDR, no strong sharpening, no AI repaint feel. Scene: {{scene}}. Mood: {{mood}}.
+
+Bottom half (50%): Distill the most recognizable elements from the photograph above into a minimalist abstract gouache illustration. Buildings reduced to geometric color blocks, far distance compressed into tiny rectangular silhouettes, clouds become soft horizontal brush strokes, sky and ground with few lines, moon simplified to a small crescent, city lights hinted with sparse warm ochre dots. Soft gouache, dry brush texture, watercolor-like opacity, subtle paper grain, hand-painted editorial illustration, matte printed texture. No visible outlines, no cartoon, no cyberpunk, no 3D, no vector icons. Generous warm ivory negative space, balanced and quiet composition. Composition: {{composition}}. Colors: {{colors}}.
+
+Bottom typography: Minimal magazine-style English layout. Main title in elegant classic serif font, muted navy blue grey. Subtitle in fine italic serif editorial. Left-aligned, restrained size, generous breathing room.
+
+Overall aesthetic: independent art magazine spread, urban travel photobook, contemporary art book cover, museum shop poster. The bottom illustration must clearly read as an artistic distillation of the photograph above, not a mechanical tracing. Premium, restrained, quiet, poetic, printed paper texture. No commercial advertising feel, no cheap AI look, no excessive decoration. Vertical poster, {{ratio}} ratio, high resolution, premium editorial composition.

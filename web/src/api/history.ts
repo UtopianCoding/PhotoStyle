@@ -1,6 +1,6 @@
 // 历史记录相关接口：列表、详情、收藏、删除、批量删除
 import { request } from './request'
-import type { HistoryItem, PageResult, StyleResult } from '@/types'
+import type { HistoryItem, PageResult } from '@/types'
 
 /** 历史列表查询参数 */
 export interface HistoryQuery {

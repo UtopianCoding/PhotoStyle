@@ -11,7 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    BeforeAfter: typeof import('./components/result/BeforeAfter.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCarousel: typeof import('element-plus/es')['ElCarousel']
     ElCarouselItem: typeof import('element-plus/es')['ElCarouselItem']
@@ -22,9 +21,7 @@ declare module 'vue' {
     ElIcon: typeof import('element-plus/es')['ElIcon']
     ElImage: typeof import('element-plus/es')['ElImage']
     ElInput: typeof import('element-plus/es')['ElInput']
-    ElOption: typeof import('element-plus/es')['ElOption']
     ElProgress: typeof import('element-plus/es')['ElProgress']
-    ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
     EmptyState: typeof import('./components/common/EmptyState.vue')['default']
     ExampleCarousel: typeof import('./components/style/ExampleCarousel.vue')['default']

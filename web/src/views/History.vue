@@ -9,7 +9,6 @@ import LoadingSkeleton from '@/components/common/LoadingSkeleton.vue'
 import {
   batchDeleteHistory,
   deleteHistory,
-  favoriteResult,
   listHistory,
 } from '@/api/history'
 import type { HistoryItem } from '@/types'

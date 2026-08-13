@@ -1,0 +1,91 @@
+# ====================================================================
+# PhotoStyle Docker Compose 部署
+#
+# 两种使用方式：
+#   方式 A（默认）：只容器化应用，连接宿主机已有的 MySQL/Redis/MinIO
+#   方式 B（全量） ：取消注释下方 mysql/redis/minio 服务，全部容器化
+#
+# 使用前：
+#   1. cp .env.docker.example .env.docker
+#   2. 修改 .env.docker 中的密码、API Key
+#   3. docker compose up -d --build
+# ====================================================================
+
+services:
+  # ---------- 后端 ----------
+  backend:
+    build: ./server
+    container_name: photostyle-backend
+    restart: always
+    env_file:
+      - .env.docker
+    environment:
+      # 通过宿主机访问已部署的 MySQL/Redis/MinIO
+      - DB_HOST=host.docker.internal
+      - REDIS_HOST=host.docker.internal
+      - MINIO_ENDPOINT=host.docker.internal:9000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "7823:7823"
+
+  # ---------- 前端 + Nginx ----------
+  web:
+    build: ./web
+    container_name: photostyle-web
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "7821:80"
+
+  # ====================================================================
+  # 方式 B：全量容器化（取消注释即可使用）
+  # 适合全新服务器，或想完全隔离环境
+  # ====================================================================
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: photostyle-mysql
+  #   restart: always
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root1234}
+  #     MYSQL_DATABASE: ${DB_NAME:-photo_style}
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+  #     - ./server/docs/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+  #   ports:
+  #     - "3306:3306"
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: photostyle-redis
+  #   restart: always
+  #   command: redis-server --requirepass ${REDIS_PASSWORD:-eqaxf241}
+  #   volumes:
+  #     - redis_data:/data
+  #   ports:
+  #     - "6379:6379"
+  #
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: photostyle-minio
+  #   restart: always
+  #   command: server /data --console-address ":9001"
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-utopian}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-eqaxf241}
+  #   volumes:
+  #     - minio_data:/data
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+
+# volumes:
+#   mysql_data:
+#   redis_data:
+#   minio_data:

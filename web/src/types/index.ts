@@ -47,6 +47,16 @@ export interface Provider {
 }
 
 /**
+ * 模型服务方列表响应（含默认 provider）
+ */
+export interface ProvidersListResponse {
+  /** 默认使用的 provider ID */
+  defaultProvider: string
+  /** 所有已配置 key 的 provider 列表 */
+  providers: Provider[]
+}
+
+/**
  * 任务状态
  */
 export type TaskStatus = 'pending' | 'running' | 'success' | 'failed' | 'canceled'
@@ -120,6 +130,8 @@ export interface UserInfo {
   email: string
   nickname: string
   avatarUrl?: string
+  /** 是否为管理员 */
+  isAdmin?: boolean
 }
 
 /**
@@ -169,4 +181,163 @@ export interface AuthResult {
 export interface PageResult<T> {
   items: T[]
   total: number
+}
+
+// ============================================================
+// 后台配置管理
+// ============================================================
+
+/**
+ * 千问 / DashScope 配置（敏感字段脱敏）
+ */
+export interface DashScopeConfig {
+  apiKey: string
+  modelVision: string
+  modelImage: string
+  workspaceId: string
+  region: string
+}
+
+/**
+ * OpenAI / DALL-E 配置（敏感字段脱敏）
+ */
+export interface OpenAIConfig {
+  apiKey: string
+  baseUrl: string
+  modelImage: string
+}
+
+/**
+ * MiniMax 配置（敏感字段脱敏）
+ */
+export interface MinimaxConfig {
+  apiKey: string
+  baseUrl: string
+  modelImage: string
+}
+
+/**
+ * 模型配置（聚合多 provider + 默认路由）
+ */
+export interface ModelConfig {
+  /** 默认图像生成 Provider ID：qianwen / dalle / minimax */
+  defaultProvider: string
+  qianwen: DashScopeConfig
+  dalle: OpenAIConfig
+  minimax: MinimaxConfig
+}
+
+/**
+ * MinIO 配置（敏感字段脱敏）
+ */
+export interface MinIOConfig {
+  endpoint: string
+  accessKey: string
+  secretKey: string
+  bucket: string
+  secure: boolean
+  publicBaseUrl: string
+}
+
+/**
+ * 阿里云 OSS 配置（敏感字段脱敏）
+ */
+export interface OSSConfig {
+  accessKeyId: string
+  accessKeySecret: string
+  bucket: string
+  endpoint: string
+}
+
+/**
+ * 存储配置（按 storageType 切换使用 minio 或 oss）
+ */
+export interface StorageConfig {
+  /** 存储类型：minio / oss */
+  storageType: string
+  minio: MinIOConfig
+  oss: OSSConfig
+}
+
+/**
+ * 应用配置
+ */
+export interface AppConfigRead {
+  logLevel: string
+  corsAllowedOrigins: string[]
+  rateLimitFreeUserDailyLimit: number
+  accessTokenExpireMinutes: number
+}
+
+/**
+ * 系统配置（读取）
+ */
+export interface SystemConfig {
+  model: ModelConfig
+  storage: StorageConfig
+  app: AppConfigRead
+}
+
+/**
+ * 系统配置更新（所有字段可选，仅传入需修改的字段）
+ */
+export interface SystemConfigUpdate {
+  model?: {
+    defaultProvider?: string
+    qianwen?: {
+      apiKey?: string
+      modelVision?: string
+      modelImage?: string
+      workspaceId?: string
+      region?: string
+    }
+    dalle?: {
+      apiKey?: string
+      baseUrl?: string
+      modelImage?: string
+    }
+    minimax?: {
+      apiKey?: string
+      baseUrl?: string
+      modelImage?: string
+    }
+  }
+  storage?: {
+    storageType?: string
+    minio?: {
+      endpoint?: string
+      accessKey?: string
+      secretKey?: string
+      bucket?: string
+      secure?: boolean
+      publicBaseUrl?: string
+    }
+    oss?: {
+      accessKeyId?: string
+      accessKeySecret?: string
+      bucket?: string
+      endpoint?: string
+    }
+  }
+  app?: {
+    logLevel?: string
+    corsAllowedOrigins?: string[]
+    rateLimitFreeUserDailyLimit?: number
+    accessTokenExpireMinutes?: number
+  }
+}
+
+/**
+ * 管理员视角的用户列表项
+ */
+export interface AdminUserItem {
+  userId: string
+  email: string
+  nickname: string | null
+  status: string
+  isAdmin: boolean
+  credits: number
+  usageToday: number
+  usageLimit: number
+  createdAt: string | null
 }

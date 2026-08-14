@@ -1,0 +1,33 @@
+# 抽象记忆面板（Abstract Memory Panel）参数化提示词模板
+#
+# 占位符说明（由 SkillEngine / PromptBuilder 在运行时替换）：
+#   {{subject}}        - 主体（建筑 / 人物 / 自然景观 / 街道等）
+#   {{scene}}          - 场景（如 outdoor-city / night / day / misty）
+#   {{mood}}           - 情绪关键词（如 quiet / serene / nostalgic / cinematic）
+#   {{composition}}    - 构图（如 wide-shot / skyline-view / street-level）
+#   {{colors}}         - 主色调列表（逗号分隔）
+#   {{ratio}}          - 输出比例（默认 3:4）
+#   {{subject_ratio}}  - 主体占比（默认 自适应）
+#   {{num_results}}    - 生成数量
+#   {{extra_prompt}}   - 用户额外补充要求
+#
+# 用法：PromptBuilder 会将本模板与图片分析结果、风格选项、用户补充要求
+# 拼接为最终提示词。本文件仅作模板参考，实际渲染逻辑见 prompt_builder.py。
+
+A complete vertical editorial artwork composed of "original photograph region + abstract memory panel + poetic title", using the uploaded image as the SOLE content source. Subject: {{subject}}. Scene: {{scene}}. Mood: {{mood}}.
+
+Top region (adaptive 38%-68% based on photo orientation): Display the original photograph faithfully. Preserve its subject, architecture, figures, light, color, spatial relationships and photographic quality. Only conservative proportional scaling or slight cropping allowed. No repainting, replacement, extension, modification or filter. Clean, flat, shadowless seam between photo and panel.
+
+Bottom region (adaptive 32%-62%): Uniform ivory panel background #F3F0E8, completely flat, no gradient, shadow, glow, vignette, texture, grain, noise, fiber, watercolor wash, fog, stain, scan mark or compression artifact. Abstract motif placed in lower-center or asymmetric position supported by original photo relationships. Motif occupies 30%-42% panel width, max 28%-34% panel height, preserving 65%-80% clean negative space.
+
+Abstract method: DECONSTRUCT the photo's spatial facts (3-6 key relationships), SELECTIVELY PRESERVE direction, density, interval, hierarchy, movement, color roles and negative space, ABSTRACT/DISTILL by deleting surface texture, perspective detail, background noise and low-information decoration, RECONSTRUCT with minimal marks.
+
+Mark system: One primary mark family (flat or slightly organic color blocks / soft round or irregular masses / arc or cone brushstrokes / continuous short bands or layered ribbons / simplified architectural masses). Max two auxiliary mark families (thin lines or structural axes / short vertical bars, isolated dots or micro-outlines / restrained figure ink-dots / sparse rhythmic repetition). Every mark must correspond to a fact in the original photo. No decorative symmetry, no sourceless patterns.
+
+Color system: Extract colors ONLY from the original photograph, desaturated and reduced. One main color role, one dark structural role, one light/neutral role, max 1-2 small accent colors from real important photo colors only. No neon, no sourceless complementary colors, no competing accents. Dominant colors: {{colors}}.
+
+Title typography: Original English main title in elegant restrained serif font (2-5 words), placed within ivory panel below or beside motif. Title color: deeper restrained subject color from photo (deep blue-grey, dark green, wine red, deep purple, charcoal). Optional 3-7 word subtitle in smaller italic serif only if it adds new semantic layer. Left-bottom aligned or bottom-centered based on motif position. No commercial bold, no sans-serif advertising fonts, no cartoon or decorative fonts.
+
+CLEAN mode: Panel background must have NO gradient, light variation, shadow, glow, vignette, color banding, seam, paper texture, grain, noise, fiber, watercolor wash, fog, stain, fading, haze, scan mark, texture overlay or compression artifact. Atmosphere comes ONLY from: negative space, distance, pause, asymmetry, scale difference, limited marks and restrained palette.
+
+Output: ONE complete photograph-plus-abstract-panel artwork. No candidate titles, no explanatory text, no numbers, dates, location labels, color charts, legends, signatures, logos or watermarks. Vertical editorial composition, {{ratio}} ratio, high resolution.

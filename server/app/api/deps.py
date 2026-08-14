@@ -10,9 +10,10 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import UnauthorizedException
+from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.database import get_db
 from app.models.user import User
+from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
 from app.services.history_service import HistoryService
 from app.services.image_service import ImageService
@@ -65,6 +66,17 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+async def get_admin_user(user: CurrentUser) -> User:
+    """校验当前用户是否为管理员，否则抛 403"""
+    if not user.is_admin:
+        raise ForbiddenException("需要管理员权限")
+    return user
+
+
+# 管理员依赖类型别名（仅 is_admin=True 用户可访问）
+AdminUser = Annotated[User, Depends(get_admin_user)]
+
+
 # -------------------- 服务工厂 --------------------
 
 async def get_auth_service(db: DBSession) -> AuthService:
@@ -87,8 +99,14 @@ async def get_history_service(db: DBSession) -> HistoryService:
     return HistoryService(db)
 
 
+async def get_admin_service() -> AdminService:
+    """管理员配置服务依赖（无状态，无需 DB 会话）"""
+    return AdminService()
+
+
 # 服务依赖类型别名
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 ImageServiceDep = Annotated[ImageService, Depends(get_image_service)]
 StyleServiceDep = Annotated[StyleService, Depends(get_style_service)]
 HistoryServiceDep = Annotated[HistoryService, Depends(get_history_service)]
+AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]

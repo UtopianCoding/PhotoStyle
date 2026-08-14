@@ -212,5 +212,6 @@ class AuthService:
             usage_today=user.usage_today,
             usage_limit=user.usage_limit,
             status=user.status,
+            is_admin=user.is_admin,
             created_at=user.created_at,
         )

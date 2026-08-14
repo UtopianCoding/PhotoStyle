@@ -11,6 +11,7 @@ export const useUserStore = defineStore('user', () => {
   const userId = ref<string>(stored?.userId ?? '')
   const email = ref<string>(stored?.email ?? '')
   const nickname = ref<string>(stored?.nickname ?? '')
+  const isAdmin = ref<boolean>(stored?.isAdmin ?? false)
   const token = ref<string>(storage.getToken() ?? '')
 
   // 是否已登录
@@ -22,6 +23,7 @@ export const useUserStore = defineStore('user', () => {
     userId.value = user.userId
     email.value = user.email
     nickname.value = user.nickname
+    isAdmin.value = user.isAdmin ?? false
     storage.setToken(tokenVal)
     storage.setUser(user)
   }
@@ -49,9 +51,10 @@ export const useUserStore = defineStore('user', () => {
       userId.value = ''
       email.value = ''
       nickname.value = ''
+      isAdmin.value = false
       storage.clear()
     }
   }
 
-  return { userId, email, nickname, token, isLoggedIn, setAuth, login, register, logout }
+  return { userId, email, nickname, isAdmin, token, isLoggedIn, setAuth, login, register, logout }
 })

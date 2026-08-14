@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
+    admin_router,
     auth_router,
     history_router,
     images_router,
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(history_router, prefix="/api/v1")
     app.include_router(skills_router, prefix="/api/v1")
     app.include_router(providers_router, prefix="/api/v1")
+    app.include_router(admin_router, prefix="/api/v1")
 
     # 挂载技能目录静态文件（提供预览图访问）
     app.mount(

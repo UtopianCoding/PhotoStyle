@@ -61,8 +61,8 @@ class AnalyzeRequest(BaseModel):
 
     # 输入图片ID
     image_id: str = Field(..., description="图片ID")
-    # 技能ID，默认使用老照片复兴
-    skill_id: str = Field(default="photo-revival", description="技能ID")
+    # 技能ID（可选）：用户手动指定时使用，留空则由后端按图片内容自动推荐
+    skill_id: str = Field(default="", description="技能ID")
     # 额外提示词（可选）
     extra_prompt: str | None = Field(default=None, description="额外提示词")
 

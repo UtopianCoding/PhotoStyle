@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -37,6 +37,8 @@ class User(Base):
     usage_limit: Mapped[int] = mapped_column(Integer, default=10, nullable=False, comment="每日使用上限")
     # 账号状态：active / disabled
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, comment="账号状态")
+    # 是否为管理员（用于后台配置功能权限控制）
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="是否管理员")
     # 创建时间
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False, comment="创建时间")
     # 更新时间

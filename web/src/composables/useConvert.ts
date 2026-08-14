@@ -1,4 +1,4 @@
-// 风格转换逻辑组合式函数：分析图片 → 提交任务 → 启动轮询
+// 风格转换逻辑组合式函数：分析图片 → 选择风格 → 提交任务 → 启动轮询
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { analyze as analyzeApi, convert as convertApi } from '@/api/style'
@@ -10,9 +10,24 @@ import type { AnalysisResult, StyleTask } from '@/types'
 /** 默认使用的技能 ID（分析失败或未返回时兜底） */
 const DEFAULT_SKILL_ID = 'photo-revival'
 
-/** 从分析结果中取推荐技能，兜底默认 */
-function resolveSkillId(result: AnalysisResult | null | undefined): string {
-  return result?.recommendedSkillId || DEFAULT_SKILL_ID
+/** skill_id → 中文名称映射（用于提示消息） */
+const SKILL_NAME_MAP: Record<string, string> = {
+  'photo-revival': '老照片复兴',
+  'city-editorial': '城市风景海报',
+  'photo-abstract-editorial': '照片抽象编辑',
+}
+
+/** 获取技能中文名称 */
+export function getSkillName(skillId: string): string {
+  return SKILL_NAME_MAP[skillId] || skillId
+}
+
+/** 优先使用用户手动选择的技能，否则使用分析推荐的技能，兜底默认 */
+function resolveSkillId(
+  selected: string,
+  result: AnalysisResult | null | undefined,
+): string {
+  return selected || result?.recommendedSkillId || DEFAULT_SKILL_ID
 }
 
 export function useConvert() {
@@ -21,7 +36,7 @@ export function useConvert() {
   const styleStore = useStyleStore()
   const taskStore = useTaskStore()
 
-  /** 分析图片，生成结构化提示词 + 诗意小字选项，同时拿到后端推荐的技能 ID */
+  /** 分析图片，按用户选择的风格生成提示词 + 诗意小字选项 */
   async function analyze(): Promise<AnalysisResult | null> {
     if (!imageStore.imageId) {
       ElMessage.warning('请先上传图片')
@@ -29,17 +44,19 @@ export function useConvert() {
     }
     styleStore.analyzing = true
     try {
+      // 用户手动选择了风格则按该风格分析；未选择时留空，由后端自动推荐
       const result = await analyzeApi({
         imageId: imageStore.imageId,
-        // 此处 skillId 只是作为历史兼容字段传，真正的推荐技能由分析接口返回
-        skillId: DEFAULT_SKILL_ID,
+        skillId: styleStore.selectedSkillId || undefined,
         extraPrompt: styleStore.extraPrompt,
       })
       styleStore.setAnalysisResult(result)
+      // 分析完成后，如果用户未手动选择技能，则自动选中推荐的技能
+      if (!styleStore.selectedSkillId && result.recommendedSkillId) {
+        styleStore.setSkillId(result.recommendedSkillId)
+      }
       ElMessage.success(
-        `图片分析完成（推荐风格：${
-          result.recommendedSkillId === 'city-editorial' ? '城市风景海报' : '老照片复兴'
-        }）`,
+        `图片分析完成（推荐风格：${getSkillName(result.recommendedSkillId)}）`,
       )
       return result
     } catch {
@@ -50,7 +67,7 @@ export function useConvert() {
     }
   }
 
-  /** 提交风格转换任务：使用分析结果推荐的技能 ID */
+  /** 提交风格转换任务：优先使用用户选择的技能，否则使用推荐的技能 */
   async function convert(): Promise<StyleTask | null> {
     if (!imageStore.imageId) {
       ElMessage.warning('请先上传图片')
@@ -62,7 +79,10 @@ export function useConvert() {
     }
     converting.value = true
     try {
-      const skillId = resolveSkillId(styleStore.analysisResult)
+      const skillId = resolveSkillId(
+        styleStore.selectedSkillId,
+        styleStore.analysisResult,
+      )
       const task = await convertApi({
         imageId: imageStore.imageId,
         skillId,

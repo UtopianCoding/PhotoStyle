@@ -19,11 +19,6 @@ services:
     restart: always
     env_file:
       - .env.docker
-    environment:
-      # 通过宿主机访问已部署的 MySQL/Redis/MinIO
-      - DB_HOST=host.docker.internal
-      - REDIS_HOST=host.docker.internal
-      - MINIO_ENDPOINT=host.docker.internal:9000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

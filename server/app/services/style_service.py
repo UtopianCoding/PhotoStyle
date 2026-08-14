@@ -155,14 +155,26 @@ class StyleService:
             logger.warning("[分析] 轻量分类失败，回退默认技能: %s", exc)
             quick_bundle = ""
 
-        # 3. 分类并选择推荐技能
+        # 3. 分类并选择技能：用户指定了有效技能则优先使用，否则按内容自动推荐
         category = _classify_image_category(quick_bundle)
-        recommended_skill_id = _pick_skill_id_by_category(category)
-        logger.info("[分析] 内容类别判定: category=%s, recommended_skill=%s", category, recommended_skill_id)
+        auto_skill_id = _pick_skill_id_by_category(category)
+
+        # 所有可用技能 ID（与 skills 目录一致）
+        available_skills = {"photo-revival", "city-editorial", "photo-abstract-editorial"}
+        requested_skill = (payload.skill_id or "").strip()
+        if requested_skill in available_skills:
+            skill_id = requested_skill
+            logger.info("[分析] 使用用户指定技能: %s", skill_id)
+        else:
+            skill_id = auto_skill_id
+        logger.info("[分析] 内容类别判定: category=%s, auto_skill=%s, 实际使用 skill=%s",
+                    category, auto_skill_id, skill_id)
 
         # 4. 调用对应深度分析 prompt
-        if recommended_skill_id == "city-editorial":
+        if skill_id == "city-editorial":
             analysis_data = await self.analyzer.analyze_for_editorial(image.original_url)
+        elif skill_id == "photo-abstract-editorial":
+            analysis_data = await self.analyzer.analyze_for_abstract(image.original_url)
         else:
             analysis_data = await self.analyzer.analyze_for_revival(image.original_url)
 
@@ -172,11 +184,11 @@ class StyleService:
             final_prompt = final_prompt.rstrip(".") + f". Additional requirement: {payload.extra_prompt.strip()}."
             analysis_data["final_prompt"] = final_prompt
 
-        logger.info("[分析] 完成: recommended_skill=%s, final_prompt 长度=%d, poetic_options=%d",
-                     recommended_skill_id, len(final_prompt), len(analysis_data.get("poetic_options", [])))
+        logger.info("[分析] 完成: skill=%s, final_prompt 长度=%d, poetic_options=%d",
+                     skill_id, len(final_prompt), len(analysis_data.get("poetic_options", [])))
 
         return AnalyzeResponse(
-            recommended_skill_id=recommended_skill_id,
+            recommended_skill_id=skill_id,
             subject_analysis=analysis_data.get("subject_analysis", ""),
             core_elements=analysis_data.get("core_elements", []),
             rules=analysis_data.get("rules", {}),

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 // 根组件：顶部导航栏 + 路由出口 + 切换过渡
 import { RouterLink, RouterView } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
 </script>
 
 <template>
@@ -16,6 +19,7 @@ import { RouterLink, RouterView } from 'vue-router'
         <nav class="app-nav">
           <RouterLink to="/" class="app-nav__link">首页</RouterLink>
           <RouterLink to="/history" class="app-nav__link">历史</RouterLink>
+          <RouterLink v-if="userStore.isAdmin" to="/admin" class="app-nav__link">管理</RouterLink>
         </nav>
       </div>
     </header>

@@ -146,6 +146,46 @@ class DalleConfig(BaseSettings):
     api_key: SecretStr = SecretStr("")
     # OpenAI 接口基础地址（可替换为兼容代理）
     base_url: str = "https://api.openai.com/v1"
+    # 图像生成模型名（如 dall-e-3）
+    model_image: str = "dall-e-3"
+
+
+# ============================================================
+# MiniMax 配置
+# ============================================================
+class MinimaxConfig(BaseSettings):
+    """MiniMax 图像生成配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MINIMAX_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # MiniMax API Key（敏感信息）
+    api_key: SecretStr = SecretStr("")
+    # MiniMax 接口基础地址
+    base_url: str = "https://api.minimax.chat/v1"
+    # 图像生成模型名
+    model_image: str = "image-01"
+
+
+# ============================================================
+# 模型路由配置
+# ============================================================
+class ModelRoutingConfig(BaseSettings):
+    """模型路由配置（决定默认使用哪个图像生成 Provider）"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MODEL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao
+    default_provider: str = "qianwen"
 
 
 # ============================================================
@@ -335,6 +375,10 @@ class Settings(BaseSettings):
     doubao: DoubaoConfig = DoubaoConfig()
     # DALL-E 配置
     dalle: DalleConfig = DalleConfig()
+    # MiniMax 配置
+    minimax: MinimaxConfig = MinimaxConfig()
+    # 模型路由配置
+    model: ModelRoutingConfig = ModelRoutingConfig()
     # 存储类型配置
     storage: StorageConfig = StorageConfig()
     # MinIO 配置

@@ -1,17 +1,40 @@
 <script setup lang="ts">
-// 首页：上传照片 → 查看示例 → 分析图片 → 选择诗意小字 → 一键生成手绘插画
+// 首页：上传照片 → 查看示例 → 选择风格 → 分析图片 → 选择诗意小字 → 一键生成
+import { onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import ImageUploader from '@/components/uploader/ImageUploader.vue'
-import ExampleCarousel from '@/components/style/ExampleCarousel.vue'
+import StyleGallery from '@/components/style/StyleGallery.vue'
+import { listSkills } from '@/api/skill'
 import { useImageStore } from '@/stores/image'
 import { useStyleStore } from '@/stores/style'
 import { useConvert } from '@/composables/useConvert'
+import type { Skill } from '@/types'
 
 const router = useRouter()
 const imageStore = useImageStore()
 const styleStore = useStyleStore()
 const { converting, analyze, convert } = useConvert()
+
+// 当前选中的技能对象（用于展示描述）
+const selectedSkill = computed<Skill | undefined>(() =>
+  styleStore.skills.find((s) => s.id === styleStore.selectedSkillId),
+)
+
+/** 加载技能列表 */
+async function loadSkills() {
+  try {
+    const skills = await listSkills()
+    styleStore.setSkills(skills)
+  } catch {
+    ElMessage.error('加载风格列表失败')
+  }
+}
+
+/** 选择技能 */
+function onSelectSkill(skill: Skill) {
+  styleStore.setSkillId(skill.id)
+}
 
 /** 分析图片 */
 async function onAnalyze() {
@@ -26,17 +49,20 @@ async function onConvert() {
     router.push(`/result/${task.taskId}`)
   }
 }
+
+onMounted(loadSkills)
 </script>
 
 <template>
-  <div class="home-flow mx-auto max-w-3xl px-4 py-10">
+  <div class="home-flow mx-auto max-w-4xl px-4 py-12">
     <!-- 诗意标题 -->
     <section class="hero ink-fade">
       <div class="hero__seal-wrap">
         <span class="hero__seal">影</span>
       </div>
       <h1 class="hero__title font-display">把照片画成一页诗</h1>
-      <p class="hero__subtitle">上传照片，AI 分析生成提示词，一键生成手绘复兴插画</p>
+      <p class="hero__subtitle">上传照片，AI 分析生成提示词，选择风格一键生成</p>
+      <div class="hero__rule" aria-hidden="true"></div>
     </section>
 
     <!-- 上传区 -->
@@ -48,13 +74,21 @@ async function onConvert() {
       <ImageUploader />
     </section>
 
-    <!-- 示例效果图（轮播） -->
+    <!-- 选择风格（卡片内嵌示例效果，点击选中） -->
     <section class="notebook-section ink-fade ink-fade--delay-2">
       <h2 class="notebook-section__label font-display">
         <span class="ink-stamp">贰</span>
-        <span>示例效果</span>
+        <span>选择风格</span>
       </h2>
-      <ExampleCarousel />
+      <StyleGallery
+        :skills="styleStore.skills"
+        :selected-id="styleStore.selectedSkillId"
+        @select="onSelectSkill"
+      />
+      <p v-if="selectedSkill" class="skill-desc">{{ selectedSkill.description }}</p>
+      <p v-else class="skill-desc skill-desc--hint">
+        卡片内为各风格的示例效果，点击选中后再进行分析
+      </p>
     </section>
 
     <!-- 分析按钮 -->
@@ -175,23 +209,23 @@ async function onConvert() {
 /* 诗意标题：居中、大留白，宋体质感，顶部朱印点睛 */
 .hero {
   text-align: center;
-  padding: 56px 0 64px;
+  padding: 64px 0 56px;
 }
 .hero__seal-wrap {
   display: flex;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: 26px;
 }
 .hero__seal {
-  width: 48px;
-  height: 48px;
-  border-radius: 5px;
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
   background: var(--color-primary);
   color: #fff;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 28px;
-  line-height: 48px;
+  font-size: 34px;
+  line-height: 60px;
   text-align: center;
   box-shadow: var(--shadow-seal);
   position: relative;
@@ -199,50 +233,84 @@ async function onConvert() {
 .hero__seal::after {
   content: "";
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
   background: rgba(255, 255, 255, 0.18);
   border-radius: 50%;
 }
 .hero__title {
-  font-size: 2.25rem; /* text-4xl */
+  font-size: clamp(2rem, 5vw, 2.75rem);
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: 0.08em;
   line-height: 1.4;
 }
 .hero__subtitle {
-  margin-top: 14px;
-  font-size: 15px;
+  margin-top: 16px;
+  font-size: 16px;
   color: var(--color-text-secondary);
   letter-spacing: 0.04em;
+}
+/* 副标题下的墨线分隔：呼应纸张，收束 Hero */
+.hero__rule {
+  width: 72px;
+  height: 2px;
+  margin: 36px auto 0;
+  background: linear-gradient(90deg, transparent, var(--color-primary) 30%, var(--color-primary) 70%, transparent);
+  opacity: 0.55;
 }
 
 /* 章节块：无卡片阴影，仅以细线分隔，留白即结构 */
 .notebook-section {
-  padding: 36px 0;
+  padding: 44px 0;
   border-top: 1px solid rgba(156, 150, 139, 0.15);
 }
 .notebook-section:first-of-type {
   border-top: none;
 }
 .notebook-section__label {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 18px;
+  margin-bottom: 22px;
   letter-spacing: 0.06em;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+/* 朱印编号：章节的墨色锚点 */
+.ink-stamp {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 17px;
+  line-height: 32px;
+  text-align: center;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-seal);
+}
+
+/* 风格描述文字 */
+.skill-desc {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+.skill-desc--hint {
+  opacity: 0.6;
 }
 
 /* 朱砂转换按钮：纸面上的唯一强调标点 */
 .convert-action {
   text-align: center;
-  padding: 44px 0 28px;
+  padding: 48px 0 32px;
 }
 .convert-btn {
   appearance: none;
@@ -250,11 +318,11 @@ async function onConvert() {
   cursor: pointer;
   background: var(--color-primary);
   color: #fff;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  padding: 13px 40px;
-  border-radius: 8px;
+  padding: 15px 48px;
+  border-radius: 10px;
   box-shadow: 0 4px 14px rgba(200, 68, 43, 0.28);
   transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
 }
@@ -281,12 +349,12 @@ async function onConvert() {
   cursor: pointer;
   background: transparent;
   color: var(--color-text);
-  border: 1.5px solid var(--color-text);
-  font-size: 15px;
+  border: 2px solid var(--color-text);
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  padding: 11px 36px;
-  border-radius: 8px;
+  padding: 13px 44px;
+  border-radius: 10px;
   transition: all 0.2s ease;
 }
 .analyze-btn:hover:not(:disabled) {
@@ -306,7 +374,7 @@ async function onConvert() {
 
 /* 分析结果区域 */
 .analysis-result {
-  padding: 24px;
+  padding: 28px;
   background: rgba(245, 242, 235, 0.5);
   border-radius: 12px;
   border: 1px solid rgba(156, 150, 139, 0.12);
@@ -422,13 +490,19 @@ async function onConvert() {
 /* 移动端：标题与留白收敛 */
 @media (max-width: 640px) {
   .hero {
-    padding: 32px 0 40px;
+    padding: 40px 0 44px;
   }
-  .hero__title {
-    font-size: 1.75rem;
+  .hero__seal {
+    width: 52px;
+    height: 52px;
+    font-size: 28px;
+    line-height: 52px;
   }
   .notebook-section {
-    padding: 24px 0;
+    padding: 30px 0;
+  }
+  .analysis-result {
+    padding: 20px;
   }
 }
 </style>

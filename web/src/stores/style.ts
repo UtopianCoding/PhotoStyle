@@ -1,9 +1,13 @@
-// 风格状态管理：模型服务方、附加提示词、转换选项、分析结果、诗意小字
+// 风格状态管理：技能列表、选中技能、模型服务方、附加提示词、转换选项、分析结果、诗意小字
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { AnalysisResult } from '@/types'
+import type { AnalysisResult, Skill } from '@/types'
 
 export const useStyleStore = defineStore('style', () => {
+  // 可用技能列表
+  const skills = ref<Skill[]>([])
+  // 用户选中的技能 ID（空字符串表示未选择，使用分析推荐）
+  const selectedSkillId = ref<string>('')
   // 选中的模型服务方
   const selectedProvider = ref<string>('')
   // 附加提示词
@@ -19,6 +23,16 @@ export const useStyleStore = defineStore('style', () => {
 
   // 是否已完成分析
   const isAnalyzed = computed(() => !!analysisResult.value)
+
+  /** 设置技能列表 */
+  function setSkills(list: Skill[]) {
+    skills.value = list
+  }
+
+  /** 设置选中技能 ID */
+  function setSkillId(skillId: string) {
+    selectedSkillId.value = skillId
+  }
 
   /** 设置模型服务方 */
   function setProvider(provider: string) {
@@ -59,6 +73,8 @@ export const useStyleStore = defineStore('style', () => {
   }
 
   return {
+    skills,
+    selectedSkillId,
     selectedProvider,
     extraPrompt,
     options,
@@ -66,6 +82,8 @@ export const useStyleStore = defineStore('style', () => {
     selectedPoeticText,
     analyzing,
     isAnalyzed,
+    setSkills,
+    setSkillId,
     setProvider,
     setExtraPrompt,
     setOptions,

@@ -18,6 +18,7 @@ from typing import Any
 from app.ai.schemas import ImageAnalysis
 from app.config import settings
 from app.config.dashscope import (
+    ABSTRACT_ANALYSIS_SYSTEM_PROMPT,
     EDITORIAL_ANALYSIS_SYSTEM_PROMPT,
     REVIVAL_ANALYSIS_SYSTEM_PROMPT,
     VISION_ANALYSIS_SYSTEM_PROMPT,
@@ -303,6 +304,91 @@ class ImageAnalyzer:
 
         logger.info(
             "[风景海报分析] 解析完成: subject=%s, elements=%d, poetic=%d",
+            str(data.get("subject_analysis", ""))[:50],
+            len(data.get("core_elements", [])),
+            len(data.get("poetic_options", [])),
+        )
+        return data
+
+    async def analyze_for_abstract(self, image_url: str) -> dict[str, Any]:
+        """
+        Photo Abstract Editorial 专用深度分析（照片抽象编辑）。
+
+        使用 ABSTRACT_ANALYSIS_SYSTEM_PROMPT 调用 VL 模型，
+        提炼照片的空间事实与视觉关系，返回面向"照片区域+抽象面板+标题"的结构化结果。
+
+        Args:
+            image_url: 待分析的图片地址
+
+        Returns:
+            解析后的 dict，包含 subject_analysis / core_elements / rules /
+            final_prompt / poetic_options / suggestions 等字段
+        """
+        return await asyncio.to_thread(self._analyze_abstract_sync, image_url)
+
+    def _analyze_abstract_sync(self, image_url: str) -> dict[str, Any]:
+        """同步执行 Photo Abstract Editorial 深度分析"""
+        from dashscope import MultiModalConversation
+        from http import HTTPStatus
+
+        api_key = settings.dashscope.api_key.get_secret_value()
+        if not api_key:
+            raise AIServiceException("DashScope API Key 未配置")
+
+        messages = [
+            {
+                "role": "system",
+                "content": [{"text": ABSTRACT_ANALYSIS_SYSTEM_PROMPT}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"image": image_url},
+                    {"text": "请分析这张照片并按要求输出 JSON。"},
+                ],
+            },
+        ]
+
+        logger.info("[抽象编辑分析] 调用 VL 模型: image_url=%s", image_url)
+        logger.debug("[抽象编辑分析] 完整 messages: %s", json.dumps(messages, ensure_ascii=False, default=str))
+
+        start_time = time.time()
+
+        try:
+            rsp = MultiModalConversation.call(
+                model=self.model,
+                messages=messages,
+                api_key=api_key,
+            )
+        except Exception as exc:
+            elapsed = time.time() - start_time
+            logger.error("[抽象编辑分析] 调用异常 (耗时 %.1fs): %s", elapsed, exc)
+            raise AIServiceException(f"抽象编辑分析调用失败: {exc}") from exc
+
+        elapsed = time.time() - start_time
+        logger.info(
+            "[抽象编辑分析] 调用完成: status_code=%s, 耗时=%.1fs",
+            getattr(rsp, "status_code", None), elapsed,
+        )
+
+        if rsp.status_code != HTTPStatus.OK:
+            raise AIServiceException(
+                f"抽象编辑分析失败: code={getattr(rsp, 'code', None)} "
+                f"message={getattr(rsp, 'message', None)}"
+            )
+
+        text = self._extract_text(rsp)
+        logger.info("[抽象编辑分析] 模型输出文本(前300字): %s", text[:300])
+        if not text:
+            raise AIServiceException("抽象编辑分析返回为空")
+
+        data = self._parse_json(text)
+        if data is None:
+            logger.warning("[抽象编辑分析] 结果非 JSON，原文: %s", text[:500])
+            raise AIServiceException("抽象编辑分析结果解析失败")
+
+        logger.info(
+            "[抽象编辑分析] 解析完成: subject=%s, elements=%d, poetic=%d",
             str(data.get("subject_analysis", ""))[:50],
             len(data.get("core_elements", [])),
             len(data.get("poetic_options", [])),

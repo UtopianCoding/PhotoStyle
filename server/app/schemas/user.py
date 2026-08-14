@@ -72,6 +72,8 @@ class UserInfo(BaseModel):
     usage_limit: int = 10
     # 账号状态
     status: str = "active"
+    # 是否为管理员
+    is_admin: bool = False
     # 创建时间
     created_at: datetime | None = None
 

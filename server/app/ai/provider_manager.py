@@ -12,6 +12,7 @@ from typing import Iterable
 from app.ai.providers.base import ImageProvider
 from app.ai.providers.dalle import DalleProvider
 from app.ai.providers.doubao import DoubaoProvider
+from app.ai.providers.minimax import MinimaxProvider
 from app.ai.providers.qianwen import QianwenProvider
 from app.ai.schemas import ImageProviderRequest, ImageProviderResponse
 from app.core.exceptions import AIServiceException
@@ -31,7 +32,7 @@ class ProviderManager:
         # 注册默认 Provider
         defaults: list[ImageProvider] = list(providers or [])
         if not defaults:
-            defaults = [QianwenProvider(), DoubaoProvider(), DalleProvider()]
+            defaults = [QianwenProvider(), DoubaoProvider(), DalleProvider(), MinimaxProvider()]
 
         for p in defaults:
             self.register(p, append_fallback=True)

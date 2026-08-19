@@ -13,12 +13,15 @@ import skill3_img1 from '@/skill3/case-1.jpg'
 import skill3_img2 from '@/skill3/case-2.jpg'
 import skill3_img3 from '@/skill3/case-4.jpg'
 import skill3_img4 from '@/skill3/case-6.jpg'
+import skill4_img1 from '@/skill4/01.png'
+import skill4_img2 from '@/skill4/02.png'
 
 /** skill_id → 示例图列表（每技能 4 张） */
 export const SKILL_IMAGES: Record<string, string[]> = {
   'photo-revival': [skill1_img1, skill1_img2, skill1_img3, skill1_img4],
   'city-editorial': [skill2_img1, skill2_img2, skill2_img3, skill2_img4],
   'photo-abstract-editorial': [skill3_img1, skill3_img2, skill3_img3, skill3_img4],
+  'fridge-magnet': [skill4_img1, skill4_img2],
 }
 
 /** 获取某 skill 的示例图（无则返回空数组） */

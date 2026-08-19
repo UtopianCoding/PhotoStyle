@@ -49,6 +49,10 @@ class ConvertRequest(BaseModel):
     final_prompt: str | None = Field(default=None, description="分析步骤生成的最终提示词")
     # 用户选择的诗意小字（可选）
     poetic_text: str | None = Field(default=None, description="用户选择的诗意小字")
+    # 拍摄地点（可选）：冰箱贴等需要英文城市名排版的技能使用，如「昆明/中国」
+    location: str | None = Field(default=None, description="拍摄地点")
+    # 重新生成时用户填写的修改意见（可选）：将在原提示词基础上叠加后交给模型
+    feedback: str | None = Field(default=None, description="重新生成的修改意见")
 
 
 class AnalyzeRequest(BaseModel):
@@ -65,6 +69,8 @@ class AnalyzeRequest(BaseModel):
     skill_id: str = Field(default="", description="技能ID")
     # 额外提示词（可选）
     extra_prompt: str | None = Field(default=None, description="额外提示词")
+    # 拍摄地点（可选）：冰箱贴等需要英文城市名排版的技能使用，如「昆明/中国」
+    location: str | None = Field(default=None, description="拍摄地点")
 
 
 class AnalyzeResponse(BaseModel):
@@ -161,3 +167,5 @@ class TaskStatusResponse(BaseModel):
     results: list[TaskResult] = Field(default_factory=list, description="任务结果")
     # 错误信息
     error: str | None = Field(default=None, description="错误信息")
+    # 本次生成实际使用的完整提示词（成功时返回首个结果）：前端用于「重新生成」时回传原提示词
+    final_prompt: str | None = Field(default=None, description="实际使用的完整提示词")

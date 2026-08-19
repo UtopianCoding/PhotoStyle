@@ -53,11 +53,11 @@ function imagesOf(skill: Skill): string[] {
 </template>
 
 <style scoped>
-/* 桌面端：三列均分，填满容器宽度，与上方上传区对齐 */
+/* 桌面端：四列并行，填满加宽后的容器，四张「画板」并列成一面展墙 */
 .style-gallery {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
   padding: 6px 2px 12px;
 }
 .style-gallery__empty {
@@ -101,15 +101,17 @@ function imagesOf(skill: Skill): string[] {
 .style-card--active:hover {
   transform: translateY(-4px);
 }
-/* 2x2 拼贴：固定高度，避免 aspect-ratio 兼容问题挤压下方文字区 */
+/* 2x2 拼贴：裱框式内衬，像一张装裱好的画板；高度收敛以适配四列并行 */
 .style-card__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
-  height: 290px;
+  height: 212px;
   gap: 3px;
-  padding: 3px;
+  padding: 7px;
   background: var(--color-bg);
+  border: 1px solid rgba(156, 150, 139, 0.16);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .style-card__img {
@@ -152,30 +154,37 @@ function imagesOf(skill: Skill): string[] {
   writing-mode: vertical-rl;
   text-orientation: upright;
 }
-/* 名称：宋体，墨黑，加大 */
+/* 名称：宋体，墨黑，四列下略收 */
 .style-card__name {
-  padding: 14px 10px 4px;
-  font-size: 17px;
+  padding: 13px 8px 3px;
+  font-size: 16px;
   text-align: center;
   color: var(--color-text);
   letter-spacing: 0.06em;
 }
-/* 描述：完整展示，不截断 */
+/* 描述：完整展示，不截断；四列下收敛行高与最小高度 */
 .style-card__desc {
-  padding: 4px 14px 14px;
-  font-size: 13px;
-  line-height: 1.6;
+  padding: 3px 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
   text-align: center;
   color: var(--color-text-secondary);
   display: block;
-  min-height: 42px;
+  min-height: 38px;
 }
-/* 窄屏：单列堆叠或横向滚动，适配移动端 */
+/* 平板：四列过窄，降为两列并行，保持卡片可读 */
+@media (max-width: 980px) {
+  .style-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* 移动端：单列横滑，保持可点选 */
 @media (max-width: 640px) {
   .style-gallery {
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
   }
   .style-card {
     flex: 0 0 auto;

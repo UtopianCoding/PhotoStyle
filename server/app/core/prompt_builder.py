@@ -46,6 +46,12 @@ class PromptBuilder:
         # 1. 技能核心提示词模板
         template = skill_config.prompt_template.strip()
         if template:
+            # 占位符替换：{{LOCATION}} 由 options.location 注入（缺省回退为 City, Country）
+            location = options.get("location")
+            if location:
+                template = template.replace("{{LOCATION}}", str(location))
+            else:
+                template = template.replace("{{LOCATION}}", "City, Country")
             parts.append(template)
 
         # 2. 图片分析摘要

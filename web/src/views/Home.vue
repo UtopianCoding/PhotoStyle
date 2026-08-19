@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 首页：上传照片 → 查看示例 → 选择风格 → 分析图片 → 选择诗意小字 → 一键生成
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import ImageUploader from '@/components/uploader/ImageUploader.vue'
@@ -20,6 +20,21 @@ const { converting, analyze, convert } = useConvert()
 const selectedSkill = computed<Skill | undefined>(() =>
   styleStore.skills.find((s) => s.id === styleStore.selectedSkillId),
 )
+
+// 是否选中冰箱贴技能（需要填写拍摄地点）
+const isFridgeMagnet = computed(() => styleStore.selectedSkillId === 'fridge-magnet')
+
+// 是否允许点击「分析图片」：仅非冰箱贴风格需要（冰箱贴为固定模板风格，无需分析）
+const canAnalyze = computed(() => !!imageStore.imageId)
+
+// 是否允许点击「开始转换」：必须已上传图片；冰箱贴需填地点，其余风格需先分析
+const canConvert = computed(() => {
+  if (!imageStore.imageId) return false
+  if (styleStore.selectedSkillId === 'fridge-magnet') {
+    return styleStore.fridgeLocation.trim().length > 0
+  }
+  return !!styleStore.analysisResult
+})
 
 /** 加载技能列表 */
 async function loadSkills() {
@@ -51,10 +66,22 @@ async function onConvert() {
 }
 
 onMounted(loadSkills)
+
+// 切换风格后，自动用新风格重新分析（旧风格的分析结果已在 store 中清空）。
+// 冰箱贴为固定模板风格，无需分析图片，故跳过自动分析。
+watch(
+  () => styleStore.selectedSkillId,
+  async (newId) => {
+    if (!newId) return
+    if (newId === 'fridge-magnet') return
+    if (!imageStore.imageId) return
+    await analyze()
+  },
+)
 </script>
 
 <template>
-  <div class="home-flow mx-auto max-w-4xl px-4 py-12">
+  <div class="home-flow mx-auto max-w-6xl px-4 py-12">
     <!-- 诗意标题 -->
     <section class="hero ink-fade">
       <div class="hero__seal-wrap">
@@ -89,13 +116,26 @@ onMounted(loadSkills)
       <p v-else class="skill-desc skill-desc--hint">
         卡片内为各风格的示例效果，点击选中后再进行分析
       </p>
+
+      <!-- 冰箱贴：拍摄地点输入（自动翻译为英文城市名） -->
+      <div v-if="isFridgeMagnet" class="fridge-location">
+        <label class="fridge-location__label font-display">拍摄地点</label>
+        <input
+          v-model="styleStore.fridgeLocation"
+          class="fridge-location__input"
+          type="text"
+          placeholder="如 昆明/中国"
+          maxlength="40"
+        />
+        <p class="fridge-location__hint">将自动翻译为英文城市名，印在海报底部</p>
+      </div>
     </section>
 
-    <!-- 分析按钮 -->
-    <div class="convert-action">
+    <!-- 分析按钮（冰箱贴为固定模板风格，无需分析图片，直接转换） -->
+    <div v-if="!isFridgeMagnet" class="convert-action">
       <button
         class="analyze-btn font-display"
-        :disabled="styleStore.analyzing || !imageStore.imageId"
+        :disabled="styleStore.analyzing || !canAnalyze"
         @click="onAnalyze"
       >
         <span v-if="!styleStore.analyzing">分析图片</span>
@@ -103,8 +143,8 @@ onMounted(loadSkills)
       </button>
     </div>
 
-    <!-- 分析结果展示 -->
-    <section v-if="styleStore.analysisResult" class="notebook-section analysis-result ink-fade">
+    <!-- 分析结果展示（冰箱贴无分析结果，隐藏） -->
+    <section v-if="styleStore.analysisResult && !isFridgeMagnet" class="notebook-section analysis-result ink-fade">
       <h2 class="notebook-section__label font-display">
         <span class="ink-stamp">叁</span>
         <span>分析结果</span>
@@ -185,11 +225,11 @@ onMounted(loadSkills)
       </div>
     </section>
 
-    <!-- 提交转换按钮 -->
-    <div v-if="styleStore.analysisResult" class="convert-action">
+    <!-- 提交转换按钮：冰箱贴无需分析即可直接转换 -->
+    <div v-if="styleStore.analysisResult || isFridgeMagnet" class="convert-action">
       <button
         class="convert-btn font-display"
-        :disabled="converting || !styleStore.analysisResult"
+        :disabled="converting || !canConvert"
         @click="onConvert"
       >
         <span v-if="!converting">开始转换</span>
@@ -305,6 +345,43 @@ onMounted(loadSkills)
 }
 .skill-desc--hint {
   opacity: 0.6;
+}
+
+/* 冰箱贴拍摄地点输入 */
+.fridge-location {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.fridge-location__label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.06em;
+}
+.fridge-location__input {
+  width: min(320px, 100%);
+  padding: 10px 14px;
+  font-size: 15px;
+  color: var(--color-text);
+  background: #fff;
+  border: 1px solid rgba(156, 150, 139, 0.35);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  letter-spacing: 0.04em;
+}
+.fridge-location__input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(200, 68, 43, 0.12);
+}
+.fridge-location__hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  letter-spacing: 0.02em;
 }
 
 /* 朱砂转换按钮：纸面上的唯一强调标点 */

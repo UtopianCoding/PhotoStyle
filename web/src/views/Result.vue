@@ -3,10 +3,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Download, Share, Star, ZoomIn } from '@element-plus/icons-vue'
+import { ArrowLeft, Download, Share, Star, ZoomIn, Refresh, Picture, Loading } from '@element-plus/icons-vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { favoriteResult } from '@/api/history'
 import { useTaskPolling } from '@/composables/useTaskPolling'
+import { useConvert } from '@/composables/useConvert'
+import { generateSharePoster, downloadDataUrl } from '@/utils/poster'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,8 +17,55 @@ const router = useRouter()
 const taskId = computed(() => String(route.params.id ?? ''))
 
 // 使用轮询组合式函数获取任务状态（接口会返回 image_id + original_url，不再依赖上传态 store）
-const { task, start, stop } = useTaskPolling(taskId.value)
+const { task, start, stop } = useTaskPolling(() => String(route.params.id ?? ''))
+const { regenerate, converting: regenerating } = useConvert()
 const favoriting = ref(false)
+
+// 重新转换（带意见）面板状态
+const showRegenerate = ref(false)
+// 用户填写的修改意见
+const feedback = ref('')
+
+// 修改意见快捷建议：点击一键填入，降低表达门槛
+const FEEDBACK_SUGGESTIONS = [
+  '背景再亮一些',
+  '整体色调偏暖',
+  '主体（人物）更突出',
+  '背景更简洁干净',
+  '笔触更细腻一些',
+  '冰箱贴稍微放大',
+]
+/** 点击快捷建议：追加到意见框（已包含则不重复） */
+function appendFeedback(text: string) {
+  const cur = feedback.value.trim()
+  if (!cur) {
+    feedback.value = text
+    return
+  }
+  if (cur.includes(text)) return
+  const sep = cur.endsWith('；') || cur.endsWith(';') ? ' ' : '；'
+  feedback.value = `${cur}${sep}${text}`
+}
+
+// 原提示词（来自任务状态接口，成功时返回首个结果的完整提示词）
+const originalPrompt = computed(() => task.value?.finalPrompt ?? '')
+
+/** 提交重新生成：在原提示词基础上叠加修改意见交给模型 */
+async function onRegenerate() {
+  if (!task.value) return
+  const newTask = await regenerate({
+    imageId: task.value.imageId,
+    skillId: task.value.skillId,
+    finalPrompt: originalPrompt.value,
+    feedback: feedback.value,
+  })
+  if (newTask) {
+    // 跳转到新的任务结果页（useTaskPolling 会在路由参数变化时自动重拉）
+    router.push(`/result/${newTask.taskId}`)
+    showRegenerate.value = false
+    feedback.value = ''
+  }
+}
 
 // 是否完成 / 失败
 const isDone = computed(() => task.value?.status === 'success')
@@ -103,6 +152,36 @@ function onShare() {
     ?.writeText(resultUrl.value)
     .then(() => ElMessage.success('链接已复制'))
     .catch(() => ElMessage.warning('复制失败，请手动复制'))
+}
+
+// 分享海报弹窗状态
+const posterDialog = ref(false)
+const posterLoading = ref(false)
+const posterDataUrl = ref('')
+
+/** 生成分享海报：效果图 + 二维码（扫码跳本站该作品） */
+async function onGeneratePoster() {
+  if (!resultUrl.value) return
+  posterDialog.value = true
+  posterLoading.value = true
+  posterDataUrl.value = ''
+  try {
+    const shareUrl = `${window.location.origin}/result/${taskId.value}`
+    posterDataUrl.value = await generateSharePoster({
+      imageUrl: resultUrl.value,
+      shareUrl,
+    })
+  } catch {
+    ElMessage.error('海报生成失败，请重试')
+  } finally {
+    posterLoading.value = false
+  }
+}
+
+/** 下载生成的分享海报 */
+function onDownloadPoster() {
+  if (!posterDataUrl.value) return
+  downloadDataUrl(posterDataUrl.value, `photo-style-poster-${taskId.value}.png`)
 }
 
 /** 返回上一页（历史记录进来则回列表，首页进来则回首页）；无历史栈时回首页兜底 */
@@ -209,8 +288,108 @@ function goBack() {
           {{ favorite ? '已收藏' : '收藏' }}
         </el-button>
         <el-button :icon="Share" class="result-secondary-btn" @click="onShare">分享</el-button>
+        <el-button
+          v-if="resultUrl"
+          :icon="Picture"
+          class="result-secondary-btn"
+          :disabled="posterLoading"
+          @click="onGeneratePoster"
+        >
+          生成分享海报
+        </el-button>
+        <el-button
+          v-if="originalPrompt"
+          :icon="Refresh"
+          class="result-secondary-btn"
+          :disabled="regenerating"
+          @click="showRegenerate = !showRegenerate"
+        >
+          重新转换
+        </el-button>
       </div>
+
+      <!-- 重新转换（带意见）面板：基于上一次提示词叠加意见重新生成 -->
+      <transition name="el-fade-in">
+        <div v-if="showRegenerate && originalPrompt" class="regen-panel">
+          <div class="regen-panel__head">
+            <span class="regen-panel__dot" aria-hidden="true"></span>
+            <div>
+              <div class="regen-panel__title font-display">修改意见 · 重新转换</div>
+              <p class="regen-panel__hint">
+                将基于上一次生成所用的完整提示词，叠加你的意见后重新生成，无需重新分析图片。
+              </p>
+            </div>
+          </div>
+
+          <!-- 快捷建议：点击一键填入，降低写意见的门槛 -->
+          <div class="regen-chips">
+            <button
+              v-for="s in FEEDBACK_SUGGESTIONS"
+              :key="s"
+              type="button"
+              class="regen-chip"
+              :class="{ 'regen-chip--on': feedback.includes(s) }"
+              @click="appendFeedback(s)"
+            >
+              {{ s }}
+            </button>
+          </div>
+
+          <el-input
+            v-model="feedback"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            resize="none"
+            placeholder="也可自行输入，例如：背景再亮一些；冰箱贴稍微放大；文字位置再往下一点…"
+          />
+          <div class="regen-panel__actions">
+            <el-button
+              type="primary"
+              :loading="regenerating"
+              :disabled="!feedback.trim()"
+              @click="onRegenerate"
+            >
+              重新生成
+            </el-button>
+            <el-button :disabled="regenerating" @click="showRegenerate = false">取消</el-button>
+          </div>
+        </div>
+      </transition>
     </div>
+
+    <!-- 分享海报弹窗：预览 + 下载 -->
+    <el-dialog
+      v-model="posterDialog"
+      title="分享海报"
+      width="min(480px, 92vw)"
+      align-center
+      class="poster-dialog-wrap"
+    >
+      <div class="poster-dialog">
+        <div v-if="posterLoading" class="poster-dialog__loading">
+          <el-icon class="is-loading" :size="22"><Loading /></el-icon>
+          <span>海报生成中…</span>
+        </div>
+        <img
+          v-else-if="posterDataUrl"
+          :src="posterDataUrl"
+          class="poster-dialog__img"
+          alt="分享海报"
+        />
+      </div>
+      <template #footer>
+        <el-button :disabled="posterLoading" @click="posterDialog = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :disabled="!posterDataUrl"
+          @click="onDownloadPoster"
+        >
+          下载海报
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -365,6 +544,119 @@ function goBack() {
   --el-button-hover-text-color: var(--color-text);
   --el-button-hover-bg-color: var(--color-accent-bg);
   --el-button-hover-border-color: var(--stone-dark, #7a7468);
+}
+
+/* 重新转换面板：纸面卡片，与原图/效果图相框呼应 */
+.regen-panel {
+  margin: 24px auto 0;
+  max-width: 680px;
+  padding: 22px 22px 20px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+/* 面板头部：朱砂小点 + 标题/说明 */
+.regen-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.regen-panel__dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: var(--shadow-seal);
+}
+.regen-panel__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.06em;
+}
+.regen-panel__hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+/* 快捷建议 chips：点击填入意见 */
+.regen-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.regen-chip {
+  appearance: none;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  transition: all 0.18s ease;
+}
+.regen-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.regen-chip--on {
+  background: rgba(200, 68, 43, 0.1);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+.regen-panel__actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+/* 重新生成主按钮：复用朱砂强调色 */
+.regen-panel__actions .el-button--primary {
+  --el-button-bg-color: var(--color-primary);
+  --el-button-border-color: var(--color-primary);
+  --el-button-hover-bg-color: var(--color-primary-dark, #a8361f);
+  --el-button-hover-border-color: var(--color-primary-dark, #a8361f);
+}
+
+/* 分享海报弹窗 */
+/* 分享海报弹窗：长海报允许弹窗内滚动查看 */
+.poster-dialog-wrap :deep(.el-dialog__body) {
+  max-height: 72vh;
+  overflow: auto;
+}
+.poster-dialog {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.poster-dialog__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.poster-dialog__img {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  background: var(--color-bg-card);
+  /* 朱砂描边与结果页相框呼应 */
+  border: 1px solid var(--color-border);
 }
 
 /* 朱砂进度条覆盖：替换 Element Plus 默认蓝 */

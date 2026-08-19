@@ -33,6 +33,7 @@ from app.core.exceptions import (
     TaskNotFoundException,
 )
 from app.core.image_processor import ImageProcessor
+from app.core.location_translator import translate_location
 from app.core.skill_engine import SkillEngine
 from app.core.task_manager import TaskManager
 from app.database import async_session_maker
@@ -160,7 +161,12 @@ class StyleService:
         auto_skill_id = _pick_skill_id_by_category(category)
 
         # 所有可用技能 ID（与 skills 目录一致）
-        available_skills = {"photo-revival", "city-editorial", "photo-abstract-editorial"}
+        available_skills = {
+            "photo-revival",
+            "city-editorial",
+            "photo-abstract-editorial",
+            "fridge-magnet",
+        }
         requested_skill = (payload.skill_id or "").strip()
         if requested_skill in available_skills:
             skill_id = requested_skill
@@ -175,6 +181,53 @@ class StyleService:
             analysis_data = await self.analyzer.analyze_for_editorial(image.original_url)
         elif skill_id == "photo-abstract-editorial":
             analysis_data = await self.analyzer.analyze_for_abstract(image.original_url)
+        elif skill_id == "fridge-magnet":
+            # 冰箱贴：固定模板，无需 VL 深度分析；
+            # 地址由文本模型翻译为英文后注入模板的 {{LOCATION}} 占位符。
+            raw_location = (payload.location or "").strip()
+            if not raw_location:
+                raise AIServiceException("请填写冰箱贴拍摄地点，例如：昆明/中国")
+            try:
+                location_en = await translate_location(raw_location)
+            except Exception as exc:
+                logger.warning("[分析] 地址翻译失败，使用原文: %s", exc)
+                location_en = raw_location
+
+            final_prompt = self.skill_engine.generate_prompt(
+                image_url=image.original_url,
+                skill_id=skill_id,
+                extra_prompt=payload.extra_prompt,
+                options={"location": location_en},
+            )
+            analysis_data = {
+                "subject_analysis": (
+                    f"旅行冰箱贴海报，地点：{location_en}。"
+                    "下半部分严格保留您的原图（人物、景观、构图、色调不变）；"
+                    "上半部分中等明度蓝紫/灰蓝哑光背景，居中一枚偏小的不规则珐琅质感冰箱贴，"
+                    "提取当地代表性景观并适当融入原图人物；底部仅细衬线英文城市名排版。"
+                ),
+                "core_elements": [
+                    "下半部分原图严格保留（不重绘、不调色）",
+                    "上半哑光蓝紫/灰蓝背景",
+                    "居中偏小不规则珐琅冰箱贴（轻微金属描边）",
+                    "底部细衬线 City, Country 排版（细线+小菱形分隔）",
+                ],
+                "rules": {
+                    "composition": "竖版 2:3，上下严格分区：上 45% 背景+冰箱贴，下 55% 原图",
+                    "mainArea": "下半 55% 为原始照片，保持人物/景观/构图/色调不变",
+                    "negativeSpace": "上半背景均匀哑光蓝紫/灰蓝，无渐变噪点",
+                    "style": "珐琅质感冰箱贴，仅轻微金属描边，温润不刺眼",
+                    "typography": "底部仅 City, Country，高级细衬线、宽字距，细线+小菱形分隔",
+                    "avoid": "过度装饰、卡通/3D/矢量图标感、过金属/过暗/过亮",
+                },
+                "special_notes": "底部文字仅保留城市与国家英文名，不追加其他文字；冰箱贴大小与文字位置逐张统一。",
+                "final_prompt": final_prompt,
+                "poetic_options": [],
+                "suggestions": [
+                    "若冰箱贴偏弱，可在额外要求中追加：make the fridge magnet slightly larger and more vivid enamel",
+                    "若底部文字位置偏移，可追加：bottom typography vertically centered and consistent",
+                ],
+            }
         else:
             analysis_data = await self.analyzer.analyze_for_revival(image.original_url)
 
@@ -225,7 +278,7 @@ class StyleService:
 
         # 2. 校验技能存在
         try:
-            self.skill_engine.load_skill(payload.skill_id)
+            skill_config = self.skill_engine.load_skill(payload.skill_id)
         except SkillNotFoundException:
             raise
         except Exception as exc:
@@ -238,11 +291,24 @@ class StyleService:
         # 4. 序列化选项
         options_dict = payload.options.model_dump()
 
+        # 4.0 冰箱贴等需要地点的技能：把拍摄地点透传到后台任务，
+        # 供 _execute 阶段权威重生成提示词（即便前端传入了旧风格的 finalPrompt 也不会用错）。
+        if payload.location:
+            options_dict["location"] = payload.location
+
+        # 4.1 以技能声明的输出比例为准（前端通常不单独设置比例）。
+        # 例如冰箱贴/城市海报声明 2:3，必须确保实际生成尺寸为 2:3 而非默认 3:4。
+        if skill_config and skill_config.ratio:
+            options_dict["ratio"] = skill_config.ratio
+
         # 4.1 如果有预分析结果，存入 options_json 中传递给后台任务
         if payload.final_prompt:
             options_dict["_final_prompt"] = payload.final_prompt
         if payload.poetic_text:
             options_dict["_poetic_text"] = payload.poetic_text
+        # 重新生成的修改意见：透传到后台任务，_execute 阶段会叠加到原提示词后交给模型
+        if payload.feedback:
+            options_dict["_feedback"] = payload.feedback
 
         # 5. 创建任务
         task = await self.task_manager.create_task(
@@ -309,27 +375,29 @@ class StyleService:
         # 选项
         options = json.loads(task.options_json) if task.options_json else {}
 
-        # 判断是否有预分析结果（从 task 字段中获取）
-        # final_prompt 和 poetic_text 存储在 task 的 extra 字段中
-        # 通过 options_json 中的 _final_prompt 和 _poetic_text 传递
+        # 从 options_json 中取出前端透传的预分析提示词 / 诗意小字 / 重新生成意见
         final_prompt = options.pop("_final_prompt", None)
         poetic_text = options.pop("_poetic_text", None)
+        feedback = options.pop("_feedback", None)
 
+        # 基础提示词构建
         if final_prompt:
-            # 有预分析结果，跳过分析阶段，直接使用提供的提示词
-            logger.info("[风格转换] 使用预分析提示词, task_id=%s, prompt=%s", task.task_id, final_prompt[:200])
-
+            # 预分析 / 重新生成：直接使用传入的完整提示词，跳过 VL 深度分析。
+            # 重新生成时 final_prompt 即上一次生成的完整提示词，叠加用户意见后整体交给模型。
+            logger.info("[风格转换] 使用预分析/重生成提示词, task_id=%s, prompt=%s", task.task_id, final_prompt[:200])
             await self.repo.update_task_status(
                 task.task_id, status="running", stage="generating", progress=30
             )
             await self.db.commit()
-
-            # 如果有诗意小字，追加到提示词
             prompt = final_prompt
-            if poetic_text:
-                prompt = prompt.rstrip(".") + f". A tiny handwritten poetic note in faint gray ink at the bottom edge reads: '{poetic_text}'."
-                logger.info("[风格转换] 追加诗意小字: %s", poetic_text)
-
+            analysis: dict[str, Any] = {}
+        elif task.skill_id == "fridge-magnet":
+            # 冰箱贴首次生成：固定模板风格，跳过 VL 分析，提示词在阶段2.5 按模板 + 地点补齐
+            await self.repo.update_task_status(
+                task.task_id, status="running", stage="generating", progress=30
+            )
+            await self.db.commit()
+            prompt = ""
             analysis: dict[str, Any] = {}
         else:
             # 无预分析结果，走原有流程：分析 → 生成提示词
@@ -363,6 +431,45 @@ class StyleService:
                 image_analysis=analysis,
             )
             logger.info("[风格转换] 阶段2: 提示词生成完成, task_id=%s, prompt=%s", task.task_id, prompt[:300])
+
+        # 阶段2.5：冰箱贴首次生成的模板重生成（仅当未传入 final_prompt 时，即首次生成）
+        # 传入 final_prompt 的重新生成场景会直接走上面的 final_prompt 分支，不再重跑模板。
+        if task.skill_id == "fridge-magnet" and not final_prompt:
+            raw_loc = options.get("location") or ""
+            if raw_loc:
+                try:
+                    loc_en = await translate_location(raw_loc)
+                except Exception as exc:
+                    logger.warning("[风格转换] 冰箱贴地点翻译失败，使用原文: %s", exc)
+                    loc_en = raw_loc
+                prompt = self.skill_engine.generate_prompt(
+                    image_url=image_url,
+                    skill_id=task.skill_id,
+                    extra_prompt=task.extra_prompt,
+                    options={"location": loc_en},
+                )
+                logger.info("[风格转换] 冰箱贴权威重生成提示词, task_id=%s, location=%s", task.task_id, loc_en)
+            elif not prompt:
+                # 既无地点也无预分析提示词：退回模板默认（City, Country）
+                prompt = self.skill_engine.generate_prompt(
+                    image_url=image_url,
+                    skill_id=task.skill_id,
+                    extra_prompt=task.extra_prompt,
+                    options={},
+                )
+
+        # 阶段2.6：统一追加诗意小字与重新生成意见（仅在尚未包含时追加，避免重复）
+        if poetic_text and "handwritten poetic note" not in prompt:
+            prompt = (
+                prompt.rstrip(".")
+                + f". A tiny handwritten poetic note in faint gray ink at the bottom edge reads: '{poetic_text}'."
+            )
+        if feedback and feedback.strip():
+            prompt = (
+                prompt.rstrip(".")
+                + f". Revise the previous version based on these adjustments: {feedback.strip()}."
+            )
+            logger.info("[风格转换] 叠加重新生成意见, task_id=%s, feedback=%s", task.task_id, feedback[:200])
 
         # 阶段3：调用 Provider 生成
         logger.info("[风格转换] 阶段3: 开始调用 Provider, task_id=%s, provider=%s", task.task_id, task.provider)
@@ -459,6 +566,9 @@ class StyleService:
 
         image = await self.repo.get_image(task.image_id)
 
+        # 实际使用的完整提示词（取首个结果）：前端「重新生成」时回传作为基础提示词
+        final_prompt_used = results[0].prompt_used if results else None
+
         return TaskStatusResponse(
             task_id=task.task_id,
             image_id=task.image_id,
@@ -469,6 +579,7 @@ class StyleService:
             message=task.error_message,
             results=result_models,
             error=task.error_message if task.status == "failed" else None,
+            final_prompt=final_prompt_used,
         )
 
     async def cancel_task(self, user_id: str, task_id: str) -> TaskStatusResponse:

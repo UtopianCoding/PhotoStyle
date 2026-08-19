@@ -115,3 +115,6 @@ docker-data/
 mysql_data/
 redis_data/
 minio_data/
+
+.workbuddy
+.trae

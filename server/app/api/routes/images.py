@@ -35,6 +35,18 @@ async def upload_image(
     return ApiResponse.success(data=result, message="上传成功")
 
 
+@router.get("", response_model=ApiResponse[list[ImageInfo]])
+async def list_images(
+    user: CurrentUser,
+    service: ImageServiceDep,
+    limit: int = 24,
+) -> ApiResponse[list[ImageInfo]]:
+    """列出当前用户已上传的图片（按创建时间倒序），用于「选择已上传图片」"""
+    safe_limit = min(max(limit, 1), 100)
+    images = await service.list_user_images(user.user_id, safe_limit)
+    return ApiResponse.success(data=images)
+
+
 @router.get("/{image_id}", response_model=ApiResponse[ImageInfo])
 async def get_image(
     image_id: str,

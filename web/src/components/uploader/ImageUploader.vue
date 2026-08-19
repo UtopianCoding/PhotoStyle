@@ -4,12 +4,15 @@ import { ref } from 'vue'
 import { Picture } from '@element-plus/icons-vue'
 import { useUpload } from '@/composables/useUpload'
 import { useImageStore } from '@/stores/image'
+import type { ImageInfo } from '@/types'
 
 const imageStore = useImageStore()
 const { uploading, progress, previewUrl, upload } = useUpload()
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const dragging = ref(false)
+// 是否展开「从已上传中选择」网格
+const showExisting = ref(false)
 
 /** 触发文件选择 */
 function triggerSelect() {
@@ -19,6 +22,21 @@ function triggerSelect() {
 /** 处理选中的文件 */
 function handleFile(file: File) {
   upload(file)
+}
+
+/** 展开 / 收起「已上传图片」网格（首次展开时拉取列表） */
+async function toggleExisting() {
+  showExisting.value = !showExisting.value
+  if (showExisting.value) {
+    await imageStore.loadMyImages()
+  }
+}
+
+/** 选择一张已上传图片，直接作为当前图片（无需重复上传） */
+function selectExisting(img: ImageInfo) {
+  imageStore.setImage(img)
+  previewUrl.value = ''
+  showExisting.value = false
 }
 
 function onInputChange(e: Event) {
@@ -74,6 +92,55 @@ function clear() {
         class="hidden"
         @change="onInputChange"
       />
+
+      <!-- 选择已上传图片：避免每次重复上传 -->
+      <!-- @click.stop 阻止冒泡，避免误触发外层上传区打开文件选择 -->
+      <div class="existing" @click.stop>
+        <button class="existing__toggle font-display" @click="toggleExisting">
+          <span class="existing__toggle-icon" aria-hidden="true">▦</span>
+          {{ showExisting ? '收起已有照片' : '从已上传中选择' }}
+          <span
+            v-if="imageStore.myImages.length && !showExisting"
+            class="existing__count"
+            >{{ imageStore.myImages.length }}</span
+          >
+          <span
+            class="existing__chevron"
+            :class="{ 'existing__chevron--open': showExisting }"
+            aria-hidden="true"
+            >›</span
+          >
+        </button>
+        <transition name="el-fade-in">
+          <div v-if="showExisting" class="existing__panel">
+            <div class="existing__panel-head">
+              <span class="existing__panel-title font-display">你之前上传的照片</span>
+              <span class="existing__panel-sub">点击任意一张即可选用，无需重新上传</span>
+            </div>
+            <p v-if="imageStore.myImagesLoading" class="existing__hint">加载中…</p>
+            <p v-else-if="!imageStore.myImages.length" class="existing__hint">
+              还没有上传记录，先传一张照片吧
+            </p>
+            <div v-else class="existing__grid">
+              <button
+                v-for="img in imageStore.myImages"
+                :key="img.imageId"
+                class="existing__item"
+                :title="img.originalUrl"
+                @click="selectExisting(img)"
+              >
+                <img
+                  :src="img.thumbnailUrl || img.originalUrl"
+                  alt="已上传图片"
+                  class="existing__img"
+                  loading="lazy"
+                />
+                <span class="existing__item-hint">选用</span>
+              </button>
+            </div>
+          </div>
+        </transition>
+      </div>
     </div>
 
     <!-- 预览区域：温暖卡片，3:4 竖版暗示 -->
@@ -199,5 +266,141 @@ function clear() {
 }
 :deep(.el-progress-bar__outer) {
   background-color: rgba(156, 150, 139, 0.2);
+}
+
+/* 选择已上传图片：抽屉式，与上传区以虚线分隔 */
+.existing {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px dashed rgba(156, 150, 139, 0.3);
+  text-align: center;
+}
+/* 胶囊开关：朱砂淡底，带数量角标与展开箭头 */
+.existing__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  appearance: none;
+  cursor: pointer;
+  background: rgba(200, 68, 43, 0.06);
+  border: 1px solid rgba(200, 68, 43, 0.3);
+  color: var(--color-primary);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  padding: 8px 18px;
+  border-radius: 999px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.existing__toggle:hover {
+  background: rgba(200, 68, 43, 0.12);
+  border-color: var(--color-primary);
+}
+.existing__toggle-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.existing__count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  background: var(--color-primary);
+  border-radius: 999px;
+}
+.existing__chevron {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+.existing__chevron--open {
+  transform: rotate(90deg);
+}
+/* 抽屉面板：纸面卡片 */
+.existing__panel {
+  margin-top: 16px;
+  padding: 16px;
+  text-align: left;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.existing__panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.existing__panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.06em;
+}
+.existing__panel-sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+}
+.existing__hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 12px 0;
+}
+.existing__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.existing__item {
+  position: relative;
+  appearance: none;
+  cursor: pointer;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #fff;
+  aspect-ratio: 1 / 1;
+  transition: border-color 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
+}
+.existing__item:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+/* 悬停浮起的「选用」提示条 */
+.existing__item-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-align: center;
+  background: rgba(200, 68, 43, 0.85);
+  opacity: 0;
+  transform: translateY(100%);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.existing__item:hover .existing__item-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+.existing__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 </style>

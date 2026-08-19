@@ -147,6 +147,27 @@ class ImageService:
 
     # -------------------- 查询 --------------------
 
+    async def list_user_images(
+        self, user_id: str, limit: int = 24
+    ) -> list[ImageInfo]:
+        """列出当前用户的图片（按创建时间倒序），用于「选择已上传图片」"""
+        images = await self.repo.get_by_user(user_id, offset=0, limit=limit)
+        return [
+            ImageInfo(
+                image_id=img.image_id,
+                original_url=img.original_url,
+                thumbnail_url=img.thumbnail_url,
+                mime_type=img.mime_type,
+                width=img.width,
+                height=img.height,
+                size=img.size,
+                compressed=img.compressed,
+                compressed_ratio=img.compressed_ratio,
+                created_at=img.created_at,
+            )
+            for img in images
+        ]
+
     async def get_image(self, user_id: str, image_id: str) -> ImageInfo:
         """获取图片信息（校验归属）"""
         image = await self.repo.get_by_image_id(image_id)

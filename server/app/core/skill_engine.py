@@ -52,6 +52,8 @@ class SkillConfig:
     ratio: str = "3:4"
     # 主体占比
     subject_ratio: str = "10-16%"
+    # 技能分类
+    category: str = "默认"
     # 预览图文件名（如 "preview.jpg"），空字符串表示无预览图
     preview: str = ""
     # 提示词模板（含占位符）
@@ -103,6 +105,8 @@ class SkillEngine:
                     config.ratio = value
                 elif key == "subject_ratio":
                     config.subject_ratio = value
+                elif key == "category":
+                    config.category = value
                 else:
                     config.options[key] = value
 

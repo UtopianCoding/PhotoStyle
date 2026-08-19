@@ -30,6 +30,18 @@ export function getImage(id: string) {
 }
 
 /**
+ * 列出当前用户已上传的图片（按创建时间倒序）
+ * @param limit 返回数量上限（默认 24）
+ */
+export function listImages(limit = 24) {
+  return request<ImageInfo[]>({
+    url: '/images',
+    method: 'get',
+    params: { limit },
+  })
+}
+
+/**
  * 删除图片
  */
 export function deleteImage(id: string) {

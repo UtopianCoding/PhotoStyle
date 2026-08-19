@@ -53,6 +53,7 @@ async def list_skills() -> ApiResponse[list[SkillSummary]]:
             provider=s.provider,
             ratio=s.ratio,
             subject_ratio=s.subject_ratio,
+            category=s.category,
             preview=(
                 f"/api/v1/skills/assets/{s.skill_id}/{s.preview}"
                 if s.preview

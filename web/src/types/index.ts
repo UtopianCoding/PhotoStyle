@@ -120,6 +120,8 @@ export interface StyleTask {
   estimatedTime?: number
   createdAt?: string | null
   updatedAt?: string | null
+  /** 本次生成实际使用的完整提示词（成功时返回首个结果），用于「重新生成」时回传 */
+  finalPrompt?: string | null
 }
 
 /**

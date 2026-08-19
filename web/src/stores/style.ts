@@ -12,6 +12,8 @@ export const useStyleStore = defineStore('style', () => {
   const selectedProvider = ref<string>('')
   // 附加提示词
   const extraPrompt = ref<string>('')
+  // 冰箱贴技能的拍摄地点（如「昆明/中国」），由后端翻译为英文城市名
+  const fridgeLocation = ref<string>('')
   // 转换选项
   const options = ref<Record<string, unknown>>({})
   // 图片分析结果
@@ -31,6 +33,13 @@ export const useStyleStore = defineStore('style', () => {
 
   /** 设置选中技能 ID */
   function setSkillId(skillId: string) {
+    if (skillId === selectedSkillId.value) return
+    // 切换风格后，之前针对旧风格生成的分析结果（subject_analysis / finalPrompt 等）
+    // 已失效。必须清除，否则 convert 会把旧风格的 finalPrompt 发给模型，导致生成风格错乱。
+    if (analysisResult.value && analysisResult.value.recommendedSkillId !== skillId) {
+      analysisResult.value = null
+      selectedPoeticText.value = ''
+    }
     selectedSkillId.value = skillId
   }
 
@@ -42,6 +51,11 @@ export const useStyleStore = defineStore('style', () => {
   /** 设置附加提示词 */
   function setExtraPrompt(prompt: string) {
     extraPrompt.value = prompt
+  }
+
+  /** 设置冰箱贴拍摄地点 */
+  function setFridgeLocation(loc: string) {
+    fridgeLocation.value = loc
   }
 
   /** 设置转换选项 */
@@ -66,6 +80,7 @@ export const useStyleStore = defineStore('style', () => {
   function reset() {
     selectedProvider.value = ''
     extraPrompt.value = ''
+    fridgeLocation.value = ''
     options.value = {}
     analysisResult.value = null
     selectedPoeticText.value = ''
@@ -77,6 +92,7 @@ export const useStyleStore = defineStore('style', () => {
     selectedSkillId,
     selectedProvider,
     extraPrompt,
+    fridgeLocation,
     options,
     analysisResult,
     selectedPoeticText,
@@ -86,6 +102,7 @@ export const useStyleStore = defineStore('style', () => {
     setSkillId,
     setProvider,
     setExtraPrompt,
+    setFridgeLocation,
     setOptions,
     setAnalysisResult,
     setPoeticText,

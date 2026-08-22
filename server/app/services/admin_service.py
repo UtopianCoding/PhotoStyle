@@ -120,7 +120,7 @@ class AdminService:
             ),
             app=AppConfigRead(
                 log_level=settings.logging.level,
-                cors_allowed_origins=list(settings.cors.allowed_origins),
+                cors_allowed_origins=settings.cors.allowed_origins_list,
                 rate_limit_free_user_daily_limit=settings.rate_limit.free_user_daily_limit,
                 access_token_expire_minutes=settings.jwt.access_token_expire_minutes,
             ),

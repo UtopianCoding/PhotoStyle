@@ -6,10 +6,8 @@
 主 Settings 类负责将各子配置组合为单一全局配置对象。
 """
 
-from typing import Annotated
-
-from pydantic import SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # ============================================================
@@ -297,19 +295,13 @@ class CORSConfig(BaseSettings):
         extra="ignore",
     )
 
-    # 允许的跨域来源列表（使用 NoDecode 避免被自动 JSON 解析）
-    allowed_origins: Annotated[list[str], NoDecode] = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ]
+    # 允许的跨域来源列表（逗号分隔字符串，避免 pydantic-settings JSON 解析问题）
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
 
-    @field_validator("allowed_origins", mode="before")
-    @classmethod
-    def parse_allowed_origins(cls, value):
-        """支持逗号分隔的字符串形式（来自环境变量）"""
-        if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        """解析逗号分隔的字符串为列表"""
+        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
 
 
 # ============================================================

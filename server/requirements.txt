@@ -26,7 +26,7 @@ python-alipay-sdk==3.4.0
 
 # 配置管理
 pydantic==2.5.3
-pydantic-settings>=2.2.0
+pydantic-settings>=2.1.0
 
 # 认证与加密
 python-jose[cryptography]==3.3.0

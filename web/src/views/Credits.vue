@@ -10,7 +10,6 @@ import QRCode from 'qrcode'
 const userStore = useUserStore()
 
 // 状态
-const loading = ref(false)
 const activeTab = ref('balance')
 const balanceInfo = ref<CreditBalanceResponse | null>(null)
 const historyItems = ref<CreditTransactionItem[]>([])
@@ -33,7 +32,8 @@ const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const presetAmounts = [10, 50, 100, 200]
 
 // 交易类型映射
-const transactionTypeMap: Record<string, { label: string; color: string }> = {
+type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
+const transactionTypeMap: Record<string, { label: string; color: TagType }> = {
   register_bonus: { label: '注册赠送', color: 'success' },
   recharge: { label: '充值', color: 'primary' },
   convert_cost: { label: '转换消耗', color: 'warning' },
@@ -175,8 +175,8 @@ function handlePageChange(page: number) {
 }
 
 // Tab 切换
-function handleTabChange(tab: string) {
-  activeTab.value = tab
+function handleTabChange(tab: string | number) {
+  activeTab.value = String(tab)
   if (tab === 'history') {
     loadHistory()
   } else if (tab === 'invite') {
@@ -190,7 +190,7 @@ function formatTransactionType(type: string): string {
 }
 
 // 获取交易类型颜色
-function getTransactionTypeColor(type: string): string {
+function getTransactionTypeColor(type: string): TagType {
   return transactionTypeMap[type]?.color ?? 'info'
 }
 

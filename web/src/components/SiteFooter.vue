@@ -1,9 +1,7 @@
 <script setup lang="ts">
 // 站脚：编辑式 zine 风格，像一本小册子的封底
 import { RouterLink } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 
-const userStore = useUserStore()
 const year = new Date().getFullYear()
 </script>
 

@@ -353,13 +353,13 @@ onMounted(() => {
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEditDialog(row)">
+          <el-button link type="primary" @click="openEditDialog(row as SkillConfigItem)">
             编辑
           </el-button>
-          <el-button link :type="row.isActive ? 'warning' : 'success'" @click="toggleActive(row)">
-            {{ row.isActive ? '禁用' : '启用' }}
+          <el-button link :type="(row as SkillConfigItem).isActive ? 'warning' : 'success'" @click="toggleActive(row as SkillConfigItem)">
+            {{ (row as SkillConfigItem).isActive ? '禁用' : '启用' }}
           </el-button>
-          <el-button link type="danger" @click="handleDelete(row)">
+          <el-button link type="danger" @click="handleDelete(row as SkillConfigItem)">
             删除
           </el-button>
         </template>

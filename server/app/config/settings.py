@@ -138,6 +138,7 @@ class DalleConfig(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        protected_namespaces=(),
     )
 
     # OpenAI API Key（敏感信息）
@@ -159,6 +160,7 @@ class MinimaxConfig(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        protected_namespaces=(),
     )
 
     # MiniMax API Key（敏感信息）

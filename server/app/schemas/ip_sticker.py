@@ -17,20 +17,6 @@ class SessionItem(BaseModel):
     updated_at: datetime
 
 
-class SessionDetail(BaseModel):
-    """会话详情（含消息历史）"""
-    session_id: str
-    user_id: str
-    status: str
-    current_step: int
-    source_image_id: str | None = None
-    created_at: datetime
-    updated_at: datetime
-    messages: list["MessageItem"] = Field(default_factory=list)
-    master_template: "MasterTemplateItem | None" = None
-    stickers: list["StickerItem"] = Field(default_factory=list)
-
-
 class MessageItem(BaseModel):
     """聊天消息"""
     message_id: str
@@ -66,6 +52,20 @@ class StickerItem(BaseModel):
     is_favorite: bool
     redraw_count: int
     created_at: datetime
+
+
+class SessionDetail(BaseModel):
+    """会话详情（含消息历史）"""
+    session_id: str
+    user_id: str
+    status: str
+    current_step: int
+    source_image_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    messages: list[MessageItem] = Field(default_factory=list)
+    master_template: MasterTemplateItem | None = None
+    stickers: list[StickerItem] = Field(default_factory=list)
 
 
 class CreateSessionRequest(BaseModel):

@@ -35,6 +35,12 @@ export default defineConfig({
         target: 'http://localhost:7823',
         changeOrigin: true,
       },
+      // WebSocket 代理（IP 贴纸聊天）
+      '/api/v1/ip-sticker/ws': {
+        target: 'ws://localhost:7823',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 })

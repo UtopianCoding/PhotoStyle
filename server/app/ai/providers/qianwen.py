@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 from app.ai.providers.base import ImageProvider
+from app.ai.dashscope_utils import run_blocking_with_timeout
 from app.ai.schemas import (
     ImageProviderRequest,
     ImageProviderResponse,
@@ -36,7 +37,14 @@ class QianwenProvider(ImageProvider):
         return bool(settings.dashscope.api_key.get_secret_value())
 
     async def generate_image(self, request: ImageProviderRequest) -> ImageProviderResponse:
-        return await asyncio.to_thread(self._generate_sync, request)
+        # 同步 SDK 放入线程池执行，并加超时（retries=1：硬失败不重复放大延迟）
+        return await run_blocking_with_timeout(
+            self._generate_sync,
+            request,
+            timeout=120.0,
+            retries=1,
+            label="千问图像生成",
+        )
 
     def _generate_sync(self, request: ImageProviderRequest) -> ImageProviderResponse:
         """通过 MultiModalConversation SDK 生成图像"""
@@ -74,18 +82,29 @@ class QianwenProvider(ImageProvider):
         # 构建消息内容
         content: list[dict[str, Any]] = []
 
-        # 如果有参考图，先加图片（图生图）
+        # 添加图片：用户内容图在前，风格参考图在后
         if request.image_url:
             content.append({"image": request.image_url})
+        if request.reference_images:
+            for ref_img in request.reference_images:
+                content.append({"image": ref_img})
 
-        # 加文本提示词
+        # 如果有参考图，在提示词开头注入角色说明
+        if request.reference_images:
+            prompt = (
+                "I provided two images. "
+                "The FIRST image is the CONTENT SOURCE - preserve ALL content elements from it: people, animals, poses, actions, clothing, accessories, and interactive objects. "
+                "The SECOND image is the STYLE REFERENCE ONLY - copy its drawing style (rough outlines, flat color blocks, chibi proportions, signature) but NEVER copy any person, object, text, or signature from it. "
+                "\n\n" + prompt
+            )
+
         content.append({"text": prompt})
 
         messages = [{"role": "user", "content": content}]
 
         logger.info(
-            "[千问图像生成] 调用参数: model=%s, size=%s, n=%s, has_image=%s, prompt=%s",
-            model, size, n, bool(request.image_url), prompt[:200],
+            "[千问图像生成] 调用参数: model=%s, size=%s, n=%s, has_image=%s, ref_images=%d, prompt=%s",
+            model, size, n, bool(request.image_url), len(request.reference_images), prompt[:200],
         )
         logger.debug("[千问图像生成] 完整 messages: %s", json.dumps(messages, ensure_ascii=False, default=str))
 
@@ -96,7 +115,7 @@ class QianwenProvider(ImageProvider):
                 api_key=api_key,
                 model=model,
                 messages=messages,
-                prompt_extend=True,
+                prompt_extend=False,  # VL 分析已生成精准提示词，无需模型自动扩展（节省耗时与 token）
             )
         except Exception as exc:
             elapsed = time.time() - start_time

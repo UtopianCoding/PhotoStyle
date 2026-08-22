@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// 风格画廊组件：横向滚动的风格卡片，卡片内以 2x2 示例图拼贴作为预览，点击选中
-import { getSkillImages } from '@/constants/skillImages'
+// 风格画廊组件：横向滚动的风格卡片，卡片内自适应图片数量的拼贴布局，点击选中
+import { ref } from 'vue'
 import type { Skill } from '@/types'
 
 defineProps<{
@@ -12,9 +12,45 @@ const emit = defineEmits<{
   (e: 'select', skill: Skill): void
 }>()
 
-/** 取 skill 的示例图（最多取前 4 张） */
-function imagesOf(skill: Skill): string[] {
-  return getSkillImages(skill.id).slice(0, 4)
+/** 取 skill 的缩略图（优先使用 API 返回的 previews，最多 4 张） */
+function thumbnailsOf(skill: Skill): string[] {
+  // 优先使用数据库返回的多张预览图
+  if (skill.previews && skill.previews.length > 0) {
+    return skill.previews.slice(0, 4)
+  }
+  // 兼容旧版：使用单张 preview
+  if (skill.preview) {
+    return [skill.preview]
+  }
+  return []
+}
+
+/** 根据图片数量返回布局 CSS 类名 */
+function gridClass(count: number): string {
+  if (count <= 0) return ''
+  if (count === 1) return 'style-card__grid--1'
+  if (count === 2) return 'style-card__grid--2'
+  if (count === 3) return 'style-card__grid--3'
+  return '' // 4 张默认 2x2
+}
+
+/** 当前正在预览的图片列表（原图），用于全局 el-image-viewer */
+const previewList = ref<string[]>([])
+const previewIndex = ref(0)
+
+function openPreview(skill: Skill, index: number) {
+  // 优先使用数据库返回的多张预览图
+  const all = skill.previews && skill.previews.length > 0
+    ? skill.previews
+    : (skill.preview ? [skill.preview] : [])
+  const list = all.length > 4 ? all.slice(0, 4) : all
+  previewList.value = list
+  previewIndex.value = index
+}
+
+function closePreview() {
+  previewList.value = []
+  previewIndex.value = 0
 }
 </script>
 
@@ -30,15 +66,21 @@ function imagesOf(skill: Skill): string[] {
       :class="{ 'style-card--active': skill.id === selectedId }"
       @click="emit('select', skill)"
     >
-      <!-- 2x2 示例图拼贴：既是示例效果，也是风格预览 -->
-      <div class="style-card__grid">
-        <template v-if="imagesOf(skill).length">
+      <!-- 自适应图片数量的拼贴布局 -->
+      <div
+        class="style-card__grid"
+        :class="gridClass(thumbnailsOf(skill).length)"
+      >
+        <template v-if="thumbnailsOf(skill).length">
           <img
-            v-for="(src, i) in imagesOf(skill)"
+            v-for="(src, i) in thumbnailsOf(skill)"
             :key="i"
             :src="src"
             :alt="`${skill.name} 示例 ${i + 1}`"
             class="style-card__img"
+            loading="lazy"
+            decoding="async"
+            @click.stop.prevent="openPreview(skill, i)"
           />
         </template>
         <!-- 无示例图时的风格化占位符 -->
@@ -50,6 +92,15 @@ function imagesOf(skill: Skill): string[] {
       <div class="style-card__desc">{{ skill.description }}</div>
     </div>
   </div>
+
+  <!-- 独立的全局预览弹窗，支持同一技能下多张图片切换 -->
+  <el-image-viewer
+    v-if="previewList.length"
+    :teleported="true"
+    :url-list="previewList"
+    :initial-index="previewIndex"
+    @close="closePreview"
+  />
 </template>
 
 <style scoped>
@@ -101,7 +152,7 @@ function imagesOf(skill: Skill): string[] {
 .style-card--active:hover {
   transform: translateY(-4px);
 }
-/* 2x2 拼贴：裱框式内衬，像一张装裱好的画板；高度收敛以适配四列并行 */
+/* 拼贴网格基础样式（默认 2x2） */
 .style-card__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -114,6 +165,29 @@ function imagesOf(skill: Skill): string[] {
   border-radius: var(--radius-md);
   overflow: hidden;
 }
+/* 1 张图：全幅大图 */
+.style-card__grid--1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.style-card__grid--1 .style-card__img {
+  grid-column: 1;
+  grid-row: 1;
+}
+/* 2 张图：左右并排，各占一半 */
+.style-card__grid--2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+/* 3 张图：上方大图横跨两列，下方两张并排 */
+.style-card__grid--3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 3fr 2fr;
+}
+.style-card__grid--3 .style-card__img:first-child {
+  grid-column: 1 / -1;
+}
+
 .style-card__img {
   width: 100%;
   height: 100%;

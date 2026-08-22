@@ -46,12 +46,20 @@ class PromptBuilder:
         # 1. 技能核心提示词模板
         template = skill_config.prompt_template.strip()
         if template:
-            # 占位符替换：{{LOCATION}} 由 options.location 注入（缺省回退为 City, Country）
+            # 占位符替换
             location = options.get("location")
+            signature = options.get("signature")
+            
             if location:
                 template = template.replace("{{LOCATION}}", str(location))
             else:
                 template = template.replace("{{LOCATION}}", "City, Country")
+            
+            if signature:
+                template = template.replace("{{SIGNATURE}}", str(signature))
+            else:
+                template = template.replace("{{SIGNATURE}}", "Utopian")
+            
             parts.append(template)
 
         # 2. 图片分析摘要

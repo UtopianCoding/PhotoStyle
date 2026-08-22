@@ -233,8 +233,10 @@ class AdminUserItem(BaseModel):
     user_id: str
     email: str
     nickname: str | None = None
+    avatar_url: str | None = None
     status: str
     is_admin: bool
+    permissions: list[str] = Field(default_factory=list, description="权限码集合")
     credits: int
     usage_today: int
     usage_limit: int

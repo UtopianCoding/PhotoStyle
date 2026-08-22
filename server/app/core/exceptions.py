@@ -62,6 +62,14 @@ class RateLimitExceededException(AppException):
     default_message = "今日使用额度已用尽"
 
 
+class InsufficientCreditsException(AppException):
+    """积分不足"""
+
+    default_code = 40201
+    default_status_code = 402
+    default_message = "积分不足"
+
+
 class AIServiceException(AppException):
     """AI 服务调用异常"""
 

@@ -1,0 +1,40 @@
+# Photo Relic Editorial / 纸上留影 参数化提示词模板
+#
+# 占位符说明（由 SkillEngine / PromptBuilder 在运行时替换）：
+#   {{subject}}        - 主体（古建筑 / 城市天际线 / 自然景观 / 人物场景等）
+#   {{scene}}          - 场景（如 outdoor / indoor / night / day / dusk）
+#   {{mood}}           - 情绪关键词（如 quiet / restrained / nostalgic / serene）
+#   {{composition}}    - 构图（如 vertical / portrait / 3:4 / 4:5）
+#   {{colors}}         - 主色调列表（逗号分隔，从原图提取）
+#   {{accent}}         - 强调色（vermilion / gold / dusk-orange / source-specific）
+#   {{layout}}         - 布局节奏（photo-over-paper / deep-paper / axis-diptych / horizon-cover）
+#   {{relic_grammar}}  - 遗迹语法（ink-seal / stacked-order / skyline-memory / light-relic / edge-remnant）
+#   {{mark_weight}}    - 标记权重（quiet-ink / graphic-ink / thin-trace / single-accent）
+#   {{title_mode}}     - 标题模式（small-english / small-chinese / textless）
+#   {{title_text}}     - 标题文字（如 "Held Dusk" / "暮色立住"）
+#   {{ratio}}          - 输出比例（默认 3:4）
+#   {{subject_ratio}}  - 主体占比（默认 10-16%）
+#   {{num_results}}    - 生成数量
+#   {{extra_prompt}}   - 用户额外补充要求
+#
+# 用法：PromptBuilder 会将本模板与图片分析结果、风格选项、用户补充要求
+# 拼接为最终提示词。本文件仅作模板参考，实际渲染逻辑见 prompt_builder.py。
+
+Create a vertical Photo Relic editorial artwork using the supplied photograph. Use this recipe: {{layout}} / {{relic_grammar}} / {{mark_weight}} / {{title_mode}}.
+
+Preserve the photograph as a real, truthful photographic region with no redrawing, no face or object changes, no invented scene content, no beauty filter, and no painterly or illustrative treatment. The upper half must remain exactly as the original photo: subject {{subject}}, scene {{scene}}, mood {{mood}}, composition {{composition}}.
+
+Pair it with a lower warm ivory/off-white paper relic region derived only from the photograph's visible subject identity, light, color, edges, scale, and emotional concept. Build one recognizable primary relic using modern printmaking language: deep ink-like blocks, softened edges, negative-space cuts, sparse trace lines, measured breaks, and at most one small warm source-derived accent ({{accent}}).
+
+The relic must preserve the full subject relationship with supporting base/path/horizon/scale marks when needed. Keep generous blank space, quiet editorial spacing, and one very small poetic title ({{title_text}}) or no title.
+
+The lower region should feel like memory pressed into paper, not a literal illustration, generic poster, infographic, watercolor copy, UI screenshot, or decorative symbol.
+
+Photo-specific cues (adapt to source):
+- Compress structural rhythm into stacked dark forms with a small accent cap and a quiet body mark
+- Preserve base and central features as pale grounding cuts so the subject remains whole
+- Reduce secondary elements into tiny vertical scale ticks, not detailed drawings
+- Let source light and color survive only as subdued paper warmth and source-derived ink colors
+- Use only one small accent, placed like a signature
+
+Colors: {{colors}}. Ratio: {{ratio}}. {{extra_prompt}}

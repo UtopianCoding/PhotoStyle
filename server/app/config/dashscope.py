@@ -43,6 +43,8 @@ TASK_QUERY_URL_TEMPLATE = f"{BASE_URL}/api/v1/tasks/{{task_id}}"
 # 各输出比例对应的默认生成尺寸
 IMAGE_SIZES = {
     "3:4": "768*1024",    # 竖构图（默认，SKILL.md 推荐）
+    "3:5": "768*1280",    # 竖版海报（实景拼贴）
+    "2:3": "768*1152",    # 竖版海报（冰箱贴/城市海报）
     "1:1": "1024*1024",   # 正方形
     "4:3": "1024*768",    # 横构图
     "16:9": "1280*720",   # 宽屏
@@ -95,6 +97,7 @@ VISION_ANALYSIS_PARAMS = {
 REVIVAL_ANALYSIS_SYSTEM_PROMPT = """你是一位专业的照片复兴插画分析师。请仔细分析给定照片，并按以下结构输出 JSON：
 
 {
+  "category": "portrait 或 landscape（根据画面主体判断：以人物/人像/宠物/室内近景为主填 portrait，以城市/建筑/山川/风景/自然风光为主填 landscape）",
   "subject_analysis": "详细描述照片主体（人物外貌、穿着、表情、动作、场景环境、氛围感受等，200-400字中文）",
   "core_elements": ["需要保留的核心元素1", "元素2", ...],
   "rules": {
@@ -131,6 +134,7 @@ REVIVAL_ANALYSIS_SYSTEM_PROMPT = """你是一位专业的照片复兴插画分�
 EDITORIAL_ANALYSIS_SYSTEM_PROMPT = """你是一位专业的城市/风景编辑海报分析师。请仔细分析给定的城市或风景照片，并按以下结构输出 JSON：
 
 {
+  "category": "landscape（本技能专用于城市/风景照片，固定填 landscape）",
   "subject_analysis": "详细描述照片主体（建筑、山川、天空、云层、月亮、街道、灯光、湖水等，200-400字中文），突出画面最具辨识度的视觉符号与氛围",
   "core_elements": ["需要保留的核心辨识度元素1（如：某桥轮廓/某天际线形状/云层方向/月亮位置）", "元素2", "元素3", "元素4", "元素5"],
   "rules": {
@@ -165,6 +169,7 @@ EDITORIAL_ANALYSIS_SYSTEM_PROMPT = """你是一位专业的城市/风景编辑�
 ABSTRACT_ANALYSIS_SYSTEM_PROMPT = """你是一位专业的照片抽象编辑分析师。请仔细分析给定照片，提炼其空间事实与视觉关系，并按以下结构输出 JSON：
 
 {
+  "category": "portrait 或 landscape（根据画面主体判断：以人物/人像/宠物/室内近景为主填 portrait，以城市/建筑/山川/风景/自然风光为主填 landscape）",
   "subject_analysis": "详细描述照片主体（主体对象、空间关系、方向、曲线、重复节奏、遮挡层级、明暗层级、色彩角色、留白分布等，200-400字中文）",
   "core_elements": ["需要保留的核心空间事实1（如：建筑垂直收分与天空留白的关系）", "元素2", "元素3", "元素4", "元素5"],
   "rules": {

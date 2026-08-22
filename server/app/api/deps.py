@@ -13,8 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ForbiddenException, UnauthorizedException
 from app.database import get_db
 from app.models.user import User
+from app.repositories.conversation_repo import ConversationRepository
 from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
+from app.services.credit_service import CreditService
+from app.services.email_service import EmailService
 from app.services.history_service import HistoryService
 from app.services.image_service import ImageService
 from app.services.style_service import StyleService
@@ -104,9 +107,27 @@ async def get_admin_service() -> AdminService:
     return AdminService()
 
 
+async def get_conversation_repo(db: DBSession) -> ConversationRepository:
+    """模型交互记录仓储依赖"""
+    return ConversationRepository(db)
+
+
+async def get_email_service() -> EmailService:
+    """邮件验证码服务依赖"""
+    return EmailService()
+
+
+async def get_credit_service(db: DBSession) -> CreditService:
+    """积分服务依赖"""
+    return CreditService(db)
+
+
 # 服务依赖类型别名
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 ImageServiceDep = Annotated[ImageService, Depends(get_image_service)]
 StyleServiceDep = Annotated[StyleService, Depends(get_style_service)]
 HistoryServiceDep = Annotated[HistoryService, Depends(get_history_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
+ConversationRepoDep = Annotated[ConversationRepository, Depends(get_conversation_repo)]
+EmailServiceDep = Annotated[EmailService, Depends(get_email_service)]
+CreditServiceDep = Annotated[CreditService, Depends(get_credit_service)]

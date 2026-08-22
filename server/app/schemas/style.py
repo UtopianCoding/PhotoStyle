@@ -51,6 +51,8 @@ class ConvertRequest(BaseModel):
     poetic_text: str | None = Field(default=None, description="用户选择的诗意小字")
     # 拍摄地点（可选）：冰箱贴等需要英文城市名排版的技能使用，如「昆明/中国」
     location: str | None = Field(default=None, description="拍摄地点")
+    # 签名（可选）：马克笔童画等需要签名的技能使用
+    signature: str | None = Field(default=None, description="签名文字")
     # 重新生成时用户填写的修改意见（可选）：将在原提示词基础上叠加后交给模型
     feedback: str | None = Field(default=None, description="重新生成的修改意见")
 

@@ -9,6 +9,8 @@ export interface AnalyzeParams {
   extraPrompt?: string
   /** 拍摄地点：冰箱贴等需要英文城市名排版的技能使用，如「昆明/中国」 */
   location?: string
+  /** 签名文字：马克笔童画等需要签名的技能使用 */
+  signature?: string
 }
 
 /** 提交转换任务参数（skillId 可选，默认 photo-revival） */
@@ -22,6 +24,8 @@ export interface ConvertParams {
   poeticText?: string
   /** 拍摄地点：冰箱贴等需要英文城市名排版的技能使用，如「昆明/中国」 */
   location?: string
+  /** 签名文字：马克笔童画等需要签名的技能使用 */
+  signature?: string
   /** 重新生成时用户填写的修改意见（将在原提示词基础上叠加后交给模型） */
   feedback?: string
 }

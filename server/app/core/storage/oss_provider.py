@@ -40,6 +40,22 @@ class OSSProvider(StorageProvider):
         logger.debug("OSS 上传成功: %s", key)
         return self.get_public_url(key)
 
+    def fetch_and_store(self, url: str, key: str, content_type: str) -> str:
+        """
+        使用 OSS 服务端直接拉取远程 URL 存储，省去本地下载环节。
+
+        通过 oss2 的 put_object_from_url 实现服务端复制（阿里云内网更快），
+        失败时回退到默认的下载+上传。
+        """
+        try:
+            headers = {"Content-Type": content_type}
+            self._bucket.put_object_from_url(key, url, headers=headers)
+            logger.debug("OSS 服务端复制成功: %s <- %s", key, url)
+            return self.get_public_url(key)
+        except Exception as exc:
+            logger.warning("OSS 服务端复制失败，回退下载+上传: %s", exc)
+            return super().fetch_and_store(url, key, content_type)
+
     def delete(self, key: str) -> None:
         """删除 OSS 对象"""
         try:

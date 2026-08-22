@@ -9,6 +9,7 @@
 """
 
 import asyncio
+import functools
 import logging
 from typing import Any
 
@@ -44,7 +45,8 @@ async def translate_location(raw: str) -> str:
     text = (raw or "").strip()
     if not text:
         return ""
-    return await asyncio.to_thread(_translate_sync, text)
+    # 同一地点多次转换不重复调大模型（进程内 LRU 缓存，线程安全：纯 dict 读）
+    return await asyncio.to_thread(_translate_cached, text)
 
 
 def _translate_sync(text: str) -> str:
@@ -88,6 +90,12 @@ def _translate_sync(text: str) -> str:
             result = f"{result[:comma_idx].strip()}, {tail}"
     logger.info("[地址翻译] 结果: %s -> %s", text, result)
     return result
+
+
+@functools.lru_cache(maxsize=512)
+def _translate_cached(text: str) -> str:
+    """同步翻译带 LRU 缓存（同地点不重复调大模型）"""
+    return _translate_sync(text)
 
 
 def _extract_content(rsp: Any) -> str:

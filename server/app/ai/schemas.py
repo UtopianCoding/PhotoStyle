@@ -29,6 +29,8 @@ class ImageProviderRequest(BaseModel):
     prompt: str = Field(..., description="提示词")
     # 输入图片地址（图生图场景；文生图可为空）
     image_url: str | None = Field(default=None, description="输入图片URL")
+    # 参考图片列表（风格参考图，会一起发给模型）
+    reference_images: list[str] = Field(default_factory=list, description="参考图片URL列表")
     # 模型名（缺省由 Provider 自行决定）
     model: str | None = Field(default=None, description="模型名")
     # 生成选项

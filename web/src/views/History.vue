@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 历史记录页：按日期分组展示，支持收藏筛选与批量删除
+// 历史记录页：按日期分组展示，支持收藏筛选、批量删除与分页加载
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -15,8 +15,14 @@ import type { HistoryItem } from '@/types'
 
 const router = useRouter()
 const loading = ref(false)
+const loadingMore = ref(false)
 // 历史记录列表
 const items = ref<HistoryItem[]>([])
+// 分页状态
+const currentPage = ref(1)
+const total = ref(0)
+const PAGE_SIZE = 20
+const hasMore = computed(() => items.value.length < total.value)
 // 是否仅查看收藏
 const onlyFavorite = ref(false)
 // 选中的任务 ID
@@ -39,16 +45,35 @@ const grouped = computed(() => {
   return Array.from(map.entries()).map(([date, list]) => ({ date, list }))
 })
 
-/** 加载历史记录 */
+/** 加载历史记录（首次或刷新） */
 async function load() {
   loading.value = true
+  currentPage.value = 1
   try {
-    const res = await listHistory({ page: 1, pageSize: 50, favorite: onlyFavorite.value })
+    const res = await listHistory({ page: 1, pageSize: PAGE_SIZE, favorite: onlyFavorite.value })
     items.value = res.items
+    total.value = res.total
   } catch {
     ElMessage.error('加载历史失败')
   } finally {
     loading.value = false
+  }
+}
+
+/** 加载更多（翻页追加） */
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const nextPage = currentPage.value + 1
+    const res = await listHistory({ page: nextPage, pageSize: PAGE_SIZE, favorite: onlyFavorite.value })
+    items.value = [...items.value, ...res.items]
+    total.value = res.total
+    currentPage.value = nextPage
+  } catch {
+    ElMessage.error('加载更多失败')
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -139,11 +164,15 @@ function openResult(taskId: string) {
                 v-if="item.resultThumbnails[0]"
                 :src="item.resultThumbnails[0]"
                 :alt="item.skillId"
+                loading="lazy"
+                decoding="async"
               />
               <img
                 v-else
                 :src="item.originalUrl"
                 :alt="item.skillId"
+                loading="lazy"
+                decoding="async"
               />
               <div v-if="item.status === 'pending' || item.status === 'running'" class="history-card__mask">处理中</div>
             </div>
@@ -163,6 +192,17 @@ function openResult(taskId: string) {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- 加载更多 -->
+      <div v-if="hasMore" class="history-load-more">
+        <el-button
+          :loading="loadingMore"
+          @click="loadMore"
+          class="history-load-more__btn"
+        >
+          {{ loadingMore ? '加载中...' : '加载更多' }}
+        </el-button>
       </div>
     </el-checkbox-group>
   </div>
@@ -271,5 +311,19 @@ function openResult(taskId: string) {
   .history-topbar__title {
     font-size: 20px;
   }
+}
+
+/* 加载更多按钮 */
+.history-load-more {
+  text-align: center;
+  padding: 16px 0 8px;
+}
+.history-load-more__btn {
+  --el-button-text-color: var(--color-text-secondary);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--color-border);
+  --el-button-hover-text-color: var(--color-primary-dark);
+  --el-button-hover-border-color: var(--color-primary);
+  min-width: 120px;
 }
 </style>

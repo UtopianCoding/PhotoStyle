@@ -1,9 +1,23 @@
 <script setup lang="ts">
 // 根组件：顶部导航栏 + 路由出口 + 切换过渡
-import { RouterLink, RouterView } from 'vue-router'
+import { ref } from 'vue'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { ArrowDown, Coin, SwitchButton, User } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import ProfileDialog from '@/components/ProfileDialog.vue'
+import SiteFooter from '@/components/SiteFooter.vue'
 
 const userStore = useUserStore()
+const router = useRouter()
+const profileVisible = ref(false)
+
+/** 退出登录 */
+async function onLogout() {
+  await userStore.logout()
+  ElMessage.success('已退出登录')
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -18,9 +32,71 @@ const userStore = useUserStore()
         </RouterLink>
         <nav class="app-nav">
           <RouterLink to="/" class="app-nav__link">首页</RouterLink>
-          <RouterLink to="/history" class="app-nav__link">历史</RouterLink>
-          <RouterLink v-if="userStore.isAdmin" to="/admin" class="app-nav__link">管理</RouterLink>
+          <RouterLink
+            v-if="userStore.hasPermission('history:view')"
+            to="/history"
+            class="app-nav__link"
+            >历史</RouterLink
+          >
+          <RouterLink
+            v-if="userStore.hasPermission('conversations:view')"
+            to="/conversations"
+            class="app-nav__link"
+            >交互</RouterLink
+          >
+          <RouterLink to="/ip-sticker" class="app-nav__link">表情包</RouterLink>
+          <RouterLink
+            v-if="userStore.hasPermission('admin:access')"
+            to="/admin"
+            class="app-nav__link"
+            >管理</RouterLink
+          >
         </nav>
+
+        <!-- 右上角：未登录显示登录，已登录显示积分 + 用户菜单 -->
+        <div class="app-user">
+          <template v-if="userStore.isLoggedIn">
+            <!-- 积分显示 -->
+            <RouterLink to="/credits" class="app-credits">
+              <span class="app-credits__icon">⚡</span>
+              <span class="app-credits__value">{{ userStore.credits }}</span>
+            </RouterLink>
+
+            <el-dropdown trigger="click" @command="(c: string) => {
+              if (c === 'profile') profileVisible = true
+              if (c === 'credits') router.push('/credits')
+              if (c === 'logout') onLogout()
+            }">
+              <span class="app-user__trigger">
+                <img
+                  v-if="userStore.avatarUrl"
+                  :src="userStore.avatarUrl"
+                  class="app-user__avatar"
+                  alt="头像"
+                />
+                <span v-else class="app-user__avatar app-user__avatar--default">
+                  {{ (userStore.nickname || userStore.email || '?').charAt(0).toUpperCase() }}
+                </span>
+                <span class="app-user__name">{{ userStore.nickname || userStore.email }}</span>
+                <el-icon class="app-user__caret"><ArrowDown /></el-icon>
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="credits">
+                    <el-icon><Coin /></el-icon> 积分中心
+                  </el-dropdown-item>
+                  <el-dropdown-item command="profile">
+                    <el-icon><User /></el-icon> 个人资料
+                  </el-dropdown-item>
+                  <el-dropdown-item command="logout" divided>
+                    <el-icon><SwitchButton /></el-icon> 退出登录
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <RouterLink v-else to="/login" class="app-user__login">登录</RouterLink>
+        </div>
       </div>
     </header>
 
@@ -32,6 +108,12 @@ const userStore = useUserStore()
         </transition>
       </RouterView>
     </main>
+
+    <!-- 站脚 -->
+    <SiteFooter />
+
+    <!-- 个人资料弹窗 -->
+    <ProfileDialog v-model="profileVisible" />
   </div>
 </template>
 
@@ -56,6 +138,7 @@ const userStore = useUserStore()
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 .app-logo {
   display: flex;
@@ -103,6 +186,7 @@ const userStore = useUserStore()
 .app-nav {
   display: flex;
   gap: 28px;
+  margin-left: auto;
 }
 .app-nav__link {
   color: var(--color-text-secondary);
@@ -126,6 +210,86 @@ const userStore = useUserStore()
 .app-nav__link:hover,
 .app-nav__link.router-link-active {
   color: var(--color-primary);
+}
+
+/* 积分显示 */
+.app-credits {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  margin-right: 12px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  transition: all 0.2s;
+}
+.app-credits:hover {
+  background: rgba(200, 68, 43, 0.06);
+  border-color: var(--color-primary-light);
+}
+.app-credits__icon {
+  font-size: 14px;
+}
+.app-credits__value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  font-family: var(--font-mono);
+}
+
+/* 右上角用户区 */
+.app-user {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.app-user__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  outline: none;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.app-user__trigger:hover {
+  background: rgba(200, 68, 43, 0.06);
+}
+.app-user__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.app-user__avatar--default {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+.app-user__name {
+  font-size: 14px;
+  color: var(--color-text);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-user__caret {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.app-user__login {
+  font-size: 14px;
+  color: var(--color-primary);
+  letter-spacing: 0.04em;
 }
 .app-main {
   min-height: calc(100vh - 60px);

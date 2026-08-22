@@ -26,6 +26,27 @@ class StorageProvider(ABC):
         """
         pass
 
+    def fetch_and_store(self, url: str, key: str, content_type: str) -> str:
+        """
+        从远程 URL 获取文件并存储到对象存储，返回公开访问 URL。
+
+        默认实现：下载到内存后上传。子类可覆写为服务端直接复制（如 OSS put_object_from_url），
+        省去本地下载环节，节省 2-10 秒。
+
+        Args:
+            url: 远程文件 URL
+            key: 对象存储 key
+            content_type: MIME 类型
+
+        Returns:
+            对象的公开访问 URL
+        """
+        import httpx
+
+        resp = httpx.get(url, timeout=60.0, follow_redirects=True)
+        resp.raise_for_status()
+        return self.upload(key, resp.content, content_type)
+
     @abstractmethod
     def delete(self, key: str) -> None:
         """

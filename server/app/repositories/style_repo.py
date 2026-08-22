@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.image import Image
 from app.models.style_result import StyleResult
 from app.models.style_task import StyleTask
+from app.models.user import User
 from app.repositories.base import BaseRepository
 
 
@@ -122,6 +123,44 @@ class StyleRepository(BaseRepository[StyleTask]):
         await self.db.refresh(result)
         return result
 
+    async def update_result_urls(
+        self, result_id: str, result_url: str, thumbnail_url: str | None = None,
+    ) -> bool:
+        """更新结果图的 URL（后台异步上传完成后，替换临时 URL 为永久 URL）"""
+        data: dict = {"result_url": result_url}
+        if thumbnail_url is not None:
+            data["thumbnail_url"] = thumbnail_url
+        stmt = update(StyleResult).where(StyleResult.result_id == result_id).values(**data)
+        res = await self.db.execute(stmt)
+        await self.db.flush()
+        return res.rowcount > 0
+
+    async def deduct_user_credits(self, user_id: str, amount: int = 1) -> bool:
+        """
+        扣减用户积分并累加今日用量。
+
+        使用原子操作（UPDATE ... SET credits = credits - N, usage_today = usage_today + 1），
+        避免并发场景下的竞态问题。
+
+        Args:
+            user_id: 用户 ID
+            amount: 扣减积分数（默认 1）
+
+        Returns:
+            True if a row was updated, False otherwise
+        """
+        stmt = (
+            update(User)
+            .where(User.user_id == user_id)
+            .values(
+                credits=User.credits - amount,
+                usage_today=User.usage_today + 1,
+            )
+        )
+        res = await self.db.execute(stmt)
+        await self.db.flush()
+        return res.rowcount > 0
+
     async def get_result(self, result_id: str) -> StyleResult | None:
         """根据对外结果ID获取结果"""
         stmt = select(StyleResult).where(StyleResult.result_id == result_id)
@@ -137,6 +176,31 @@ class StyleRepository(BaseRepository[StyleTask]):
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_results_by_tasks(self, task_ids: list[str]) -> dict[str, list[StyleResult]]:
+        """
+        批量获取多个任务的结果（一次 SQL 查询，消除 N+1）。
+
+        Args:
+            task_ids: 任务 ID 列表
+
+        Returns:
+            {task_id: [StyleResult, ...]} 按 task_id 分组的结果字典
+        """
+        if not task_ids:
+            return {}
+        stmt = (
+            select(StyleResult)
+            .where(StyleResult.task_id.in_(task_ids))
+            .order_by(StyleResult.task_id, StyleResult.created_at.asc())
+        )
+        result = await self.db.execute(stmt)
+        rows = result.scalars().all()
+
+        grouped: dict[str, list[StyleResult]] = {tid: [] for tid in task_ids}
+        for row in rows:
+            grouped.setdefault(row.task_id, []).append(row)
+        return grouped
 
     async def get_history(
         self, user_id: str, offset: int = 0, limit: int = 20, favorite: bool = False

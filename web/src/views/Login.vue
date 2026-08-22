@@ -1,11 +1,13 @@
 <script setup lang="ts">
-// 登录 / 注册页：切换模式并提交表单
-import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+// 登录 / 注册页：切换模式并提交表单，注册时需邮箱验证码
+import { ref, reactive, onBeforeUnmount, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { sendVerificationCode } from '@/api/auth'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 // 当前模式：登录 / 注册
@@ -17,7 +19,14 @@ const form = reactive({
   nickname: '',
   email: '',
   password: '',
+  code: '',
+  referralCode: '',
 })
+
+// 验证码倒计时
+const countdown = ref(0)
+const sendingCode = ref(false)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // 表单校验规则
 const rules: FormRules = {
@@ -30,6 +39,54 @@ const rules: FormRules = {
     { min: 6, message: '至少 6 位', trigger: 'blur' },
   ],
   nickname: [{ required: false }],
+  code: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { len: 6, message: '验证码为 6 位数字', trigger: 'blur' },
+  ],
+  referralCode: [{ required: false }],
+}
+
+// 页面加载时检查 URL 中的邀请码
+onMounted(() => {
+  const refCode = route.query.ref as string
+  if (refCode) {
+    form.referralCode = refCode
+    mode.value = 'register'
+    ElMessage.success('已自动填入邀请码')
+  }
+})
+
+/** 发送验证码 */
+async function onSendCode() {
+  if (!form.email) {
+    ElMessage.warning('请先输入邮箱')
+    return
+  }
+  // 简单校验邮箱格式
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+    ElMessage.warning('邮箱格式不正确')
+    return
+  }
+  if (countdown.value > 0) return
+
+  sendingCode.value = true
+  try {
+    await sendVerificationCode(form.email)
+    ElMessage.success('验证码已发送')
+    // 启动倒计时
+    countdown.value = 60
+    countdownTimer = setInterval(() => {
+      countdown.value--
+      if (countdown.value <= 0 && countdownTimer) {
+        clearInterval(countdownTimer)
+        countdownTimer = null
+      }
+    }, 1000)
+  } catch {
+    // 拦截器已提示
+  } finally {
+    sendingCode.value = false
+  }
 }
 
 /** 提交表单 */
@@ -46,7 +103,13 @@ async function onSubmit() {
       await userStore.login(form.email, form.password)
       ElMessage.success('登录成功')
     } else {
-      await userStore.register(form.nickname, form.email, form.password)
+      await userStore.register(
+        form.email,
+        form.password,
+        form.code,
+        form.nickname,
+        form.referralCode || undefined
+      )
       ElMessage.success('注册成功')
     }
     router.push('/')
@@ -61,6 +124,10 @@ async function onSubmit() {
 function switchMode() {
   mode.value = mode.value === 'login' ? 'register' : 'login'
 }
+
+onBeforeUnmount(() => {
+  if (countdownTimer) clearInterval(countdownTimer)
+})
 </script>
 
 <template>
@@ -78,8 +145,35 @@ function switchMode() {
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
         </el-form-item>
+        <!-- 验证码（仅注册模式，紧跟邮箱下方） -->
+        <el-form-item v-if="mode === 'register'" label="验证码" prop="code">
+          <div class="login-card__code-row">
+            <el-input
+              v-model="form.code"
+              placeholder="6 位验证码"
+              maxlength="6"
+              class="login-card__code-input"
+            />
+            <el-button
+              :disabled="countdown > 0"
+              :loading="sendingCode"
+              @click="onSendCode"
+              class="login-card__code-btn"
+            >
+              {{ countdown > 0 ? `${countdown}s` : '发送验证码' }}
+            </el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="密码" prop="password">
           <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" />
+        </el-form-item>
+        <!-- 邀请码（仅注册模式，可选） -->
+        <el-form-item v-if="mode === 'register'" label="邀请码（可选）" prop="referralCode">
+          <el-input
+            v-model="form.referralCode"
+            placeholder="如有邀请码请填写"
+            maxlength="8"
+          />
         </el-form-item>
         <el-button type="primary" class="w-full login-card__submit" size="large" :loading="loading" @click="onSubmit">
           {{ mode === 'login' ? '登录' : '注册' }}
@@ -149,6 +243,31 @@ function switchMode() {
   letter-spacing: 0.1em;
   margin-bottom: 24px;
 }
+
+/* 验证码行：输入框 + 发送按钮 */
+.login-card__code-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.login-card__code-input {
+  flex: 1;
+}
+.login-card__code-btn {
+  flex-shrink: 0;
+  min-width: 108px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  --el-button-text-color: var(--color-primary);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--color-primary);
+  --el-button-hover-text-color: #fff;
+  --el-button-hover-bg-color: var(--color-primary);
+  --el-button-hover-border-color: var(--color-primary);
+  --el-button-disabled-text-color: var(--color-text-placeholder);
+  --el-button-disabled-border-color: var(--color-border);
+}
+
 /* 提交按钮：朱砂主色，克制圆角 */
 .login-card__submit {
   margin-top: 4px;

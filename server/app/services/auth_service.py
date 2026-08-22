@@ -22,8 +22,22 @@ from app.core.exceptions import (
     UnauthorizedException,
     ValidationException,
 )
+from app.core.permissions import (
+    ADMIN_PERMISSIONS,
+    ALL_PERMISSIONS,
+    DEFAULT_USER_PERMISSIONS,
+    normalize_permissions,
+    serialize_permissions,
+)
 from app.models.user import User
-from app.schemas.user import AuthResponse, TokenResponse, UserInfo, UserLogin, UserRegister
+from app.schemas.user import (
+    AuthResponse,
+    TokenResponse,
+    UserInfo,
+    UserLogin,
+    UserRegister,
+    UserUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +47,12 @@ class AuthService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def is_email_registered(self, email: str) -> bool:
+        """检查邮箱是否已注册"""
+        stmt = select(User).where(User.email == email)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     # -------------------- 密码 --------------------
 
@@ -59,8 +79,19 @@ class AuthService:
         注册新用户并签发令牌。
 
         - 邮箱不可重复
-        - 初始积分为 0，每日上限按配置
+        - 校验邮箱验证码
+        - 注册赠送 10 积分
+        - 如有邀请码，邀请人获得 6 积分奖励
+        - 为新用户生成邀请码
         """
+        # 校验邮箱验证码
+        from app.services.email_service import EmailService
+        from app.services.credit_service import CreditService
+        from app.models.credit_transaction import CreditTransaction
+
+        email_service = EmailService()
+        await email_service.verify_code(payload.email, payload.code)
+
         # 校验邮箱唯一
         stmt = select(User).where(User.email == payload.email)
         existing = (await self.db.execute(stmt)).scalar_one_or_none()
@@ -69,18 +100,53 @@ class AuthService:
 
         from app.config import settings
 
+        # 处理邀请码（如果提供）
+        inviter_id = None
+        if payload.referral_code:
+            inviter_stmt = select(User).where(User.referral_code == payload.referral_code)
+            inviter = (await self.db.execute(inviter_stmt)).scalar_one_or_none()
+            if inviter is not None:
+                inviter_id = inviter.user_id
+
+        # 创建新用户，注册赠送 10 积分
         user = User(
             user_id=uuid.uuid4().hex,
             email=payload.email,
             password_hash=self.hash_password(payload.password),
             nickname=payload.nickname,
-            credits=0,
+            credits=10,  # 注册赠送 10 积分
+            inviter_id=inviter_id,
             usage_today=0,
             usage_limit=settings.rate_limit.free_user_daily_limit,
             status="active",
+            permissions=serialize_permissions(DEFAULT_USER_PERMISSIONS),
         )
         self.db.add(user)
         await self.db.flush()
+
+        # 为新用户生成邀请码（取 user_id 前 8 位）
+        user.referral_code = user.user_id[:8].upper()
+        await self.db.flush()
+
+        # 记录注册赠送积分的交易
+        credit_service = CreditService(self.db)
+        await credit_service.add_credits(
+            user_id=user.user_id,
+            amount=10,
+            transaction_type="register_bonus",
+            description="注册赠送积分",
+        )
+
+        # 如果有邀请人，给邀请人奖励 6 积分
+        if inviter_id:
+            await credit_service.add_credits(
+                user_id=inviter_id,
+                amount=6,
+                transaction_type="invite_reward",
+                description=f"邀请好友 {user.email} 注册奖励",
+                related_user_id=user.user_id,
+            )
+
         await self.db.refresh(user)
         await self.db.commit()
 
@@ -209,9 +275,82 @@ class AuthService:
             nickname=user.nickname,
             avatar_url=user.avatar_url,
             credits=user.credits,
+            referral_code=user.referral_code,
             usage_today=user.usage_today,
             usage_limit=user.usage_limit,
             status=user.status,
             is_admin=user.is_admin,
+            permissions=normalize_permissions(user.permissions),
             created_at=user.created_at,
         )
+
+    async def update_profile(self, user: User, payload: UserUpdate) -> UserInfo:
+        """
+        更新个人资料（用户本人可修改的字段：昵称、头像）。
+
+        Args:
+            user: 当前登录用户
+            payload: 待更新字段（仅传入非空字段生效）
+
+        Returns:
+            更新后的 UserInfo
+        """
+        if payload.nickname is not None:
+            user.nickname = payload.nickname
+        if payload.avatar_url is not None:
+            user.avatar_url = payload.avatar_url
+        await self.db.commit()
+        await self.db.refresh(user)
+        return self._to_user_info(user)
+
+    async def update_user_by_admin(
+        self,
+        user_id: str,
+        payload: "UserUpdate | object",
+    ) -> User | None:
+        """
+        管理员更新用户（昵称、头像、状态、管理员标记、权限）。
+
+        返回更新后的 User 模型；用户不存在返回 None。
+        """
+        from app.schemas.user import AdminUserUpdate
+
+        stmt = select(User).where(User.user_id == user_id)
+        user = (await self.db.execute(stmt)).scalar_one_or_none()
+        if user is None:
+            return None
+
+        data = payload  # type: ignore[assignment]
+        if isinstance(data, AdminUserUpdate):
+            if data.nickname is not None:
+                user.nickname = data.nickname
+            if data.avatar_url is not None:
+                user.avatar_url = data.avatar_url
+            if data.status is not None:
+                if data.status not in ("active", "disabled"):
+                    raise ValidationException("账号状态必须为 active 或 disabled")
+                user.status = data.status
+            if data.is_admin is not None:
+                user.is_admin = data.is_admin
+
+            # 权限规整：以 is_admin 为权威，确保前后端一致
+            # - 非管理员：剥离所有 admin:* 权限（后台路由由 is_admin 守卫）
+            # - 管理员：自动补齐全部 admin:* 权限
+            if data.permissions is not None:
+                perms = list(dict.fromkeys(data.permissions))
+            else:
+                # 未显式传权限时，沿用现有权限
+                perms = normalize_permissions(user.permissions)
+
+            if user.is_admin:
+                for ap in ADMIN_PERMISSIONS:
+                    if ap not in perms:
+                        perms.append(ap)
+            else:
+                perms = [p for p in perms if p not in ADMIN_PERMISSIONS]
+
+            user.permissions = serialize_permissions(perms)
+
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user

@@ -40,13 +40,16 @@ class HistoryService:
         )
         total = await self.repo.count_tasks_by_user(user_id, favorite=favorite)
 
-        # 批量查一次图片，避免 N+1
+        # 批量查图片 + 批量查结果（消除 N+1，从 50+ 次 SQL 降为 2 次）
         image_ids = list({t.image_id for t in tasks})
         images_map = await self.repo.get_images_map(image_ids)
 
+        task_ids = [t.task_id for t in tasks]
+        results_map = await self.repo.get_results_by_tasks(task_ids)
+
         items: list[HistoryItem] = []
         for task in tasks:
-            results = await self.repo.get_results_by_task(task.task_id)
+            results = results_map.get(task.task_id, [])
             thumbnails = [r.thumbnail_url or r.result_url for r in results]
             has_favorite = any(r.favorite for r in results)
             image = images_map.get(task.image_id)

@@ -24,16 +24,23 @@ const selectedSkill = computed<Skill | undefined>(() =>
 // 是否选中冰箱贴技能（需要填写拍摄地点）
 const isFridgeMagnet = computed(() => styleStore.selectedSkillId === 'fridge-magnet')
 
-// 是否允许点击「分析图片」：仅非冰箱贴风格需要（冰箱贴为固定模板风格，无需分析）
-const canAnalyze = computed(() => !!imageStore.imageId)
+// 是否选中马克笔童画技能（需要填写签名）
+const isMarkerDoodle = computed(() => styleStore.selectedSkillId === 'marker-child-doodle')
 
-// 是否允许点击「开始转换」：必须已上传图片；冰箱贴需填地点，其余风格需先分析
+// 是否需要分析图片（根据数据库配置，needAnalysis=false 的技能无需分析）
+const needsAnalysis = computed(() => selectedSkill.value?.needAnalysis ?? false)
+
+// 是否允许点击「分析图片」：需要该技能配置了 needAnalysis 且已上传图片
+const canAnalyze = computed(() => needsAnalysis.value && !!imageStore.imageId)
+
+// 是否允许点击「开始转换」：必须已上传图片；冰箱贴需额外填地点
 const canConvert = computed(() => {
   if (!imageStore.imageId) return false
   if (styleStore.selectedSkillId === 'fridge-magnet') {
     return styleStore.fridgeLocation.trim().length > 0
   }
-  return !!styleStore.analysisResult
+  // 其余风格：不强制要求先分析，后端会自动后台分析
+  return true
 })
 
 /** 加载技能列表 */
@@ -67,15 +74,11 @@ async function onConvert() {
 
 onMounted(loadSkills)
 
-// 切换风格后，自动用新风格重新分析（旧风格的分析结果已在 store 中清空）。
-// 冰箱贴为固定模板风格，无需分析图片，故跳过自动分析。
+// 切换风格后，清空旧分析结果（新风格的分析需要用户手动点击按钮）
 watch(
   () => styleStore.selectedSkillId,
-  async (newId) => {
-    if (!newId) return
-    if (newId === 'fridge-magnet') return
-    if (!imageStore.imageId) return
-    await analyze()
+  () => {
+    styleStore.setAnalysisResult(null)
   },
 )
 </script>
@@ -129,10 +132,23 @@ watch(
         />
         <p class="fridge-location__hint">将自动翻译为英文城市名，印在海报底部</p>
       </div>
+
+      <!-- 马克笔童画：签名输入 -->
+      <div v-if="isMarkerDoodle" class="fridge-location">
+        <label class="fridge-location__label font-display">签名</label>
+        <input
+          v-model="styleStore.markerSignature"
+          class="fridge-location__input"
+          type="text"
+          placeholder="默认 Utopian"
+          maxlength="20"
+        />
+        <p class="fridge-location__hint">英文签名，将潦草手写在右下角（留空则默认 Utopian）</p>
+      </div>
     </section>
 
-    <!-- 分析按钮（冰箱贴为固定模板风格，无需分析图片，直接转换） -->
-    <div v-if="!isFridgeMagnet" class="convert-action">
+    <!-- 分析按钮（根据技能的 needAnalysis 配置决定是否显示） -->
+    <div v-if="needsAnalysis" class="convert-action">
       <button
         class="analyze-btn font-display"
         :disabled="styleStore.analyzing || !canAnalyze"
@@ -143,8 +159,8 @@ watch(
       </button>
     </div>
 
-    <!-- 分析结果展示（冰箱贴无分析结果，隐藏） -->
-    <section v-if="styleStore.analysisResult && !isFridgeMagnet" class="notebook-section analysis-result ink-fade">
+    <!-- 分析结果展示（needAnalysis=false 的技能无分析结果，隐藏） -->
+    <section v-if="styleStore.analysisResult && needsAnalysis" class="notebook-section analysis-result ink-fade">
       <h2 class="notebook-section__label font-display">
         <span class="ink-stamp">叁</span>
         <span>分析结果</span>
@@ -225,8 +241,8 @@ watch(
       </div>
     </section>
 
-    <!-- 提交转换按钮：冰箱贴无需分析即可直接转换 -->
-    <div v-if="styleStore.analysisResult || isFridgeMagnet" class="convert-action">
+    <!-- 提交转换按钮：只要有图片即可转换，无需先分析 -->
+    <div v-if="imageStore.imageId" class="convert-action">
       <button
         class="convert-btn font-display"
         :disabled="converting || !canConvert"

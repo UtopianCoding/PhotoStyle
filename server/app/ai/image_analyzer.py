@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Any
 
+from app.ai.dashscope_utils import run_blocking_with_timeout
 from app.ai.schemas import ImageAnalysis
 from app.config import settings
 from app.config.dashscope import (
@@ -34,8 +35,30 @@ class ImageAnalyzer:
     # 视觉理解模型默认名称
     DEFAULT_MODEL = settings.dashscope.model_vision
 
+    # 分析结果缓存：(method_name, image_url) -> (timestamp, result)
+    # TTL 5 分钟，同一图片短时间内重复分析直接返回缓存（节省 5-20s/次）
+    _cache: dict[tuple[str, str], tuple[float, Any]] = {}
+    _CACHE_TTL = 300  # 秒
+
     def __init__(self, model: str | None = None) -> None:
         self.model = model or self.DEFAULT_MODEL
+
+    def _get_cached(self, method: str, image_url: str) -> Any | None:
+        """获取缓存的分析结果，过期返回 None"""
+        key = (method, image_url)
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        ts, result = entry
+        if time.monotonic() - ts > self._CACHE_TTL:
+            del self._cache[key]
+            return None
+        logger.info("[分析缓存] 命中: method=%s, image_url=%s", method, image_url[:80])
+        return result
+
+    def _set_cached(self, method: str, image_url: str, result: Any) -> None:
+        """缓存分析结果"""
+        self._cache[(method, image_url)] = (time.monotonic(), result)
 
     async def analyze(self, image_url: str) -> ImageAnalysis:
         """
@@ -47,7 +70,14 @@ class ImageAnalyzer:
         Returns:
             ImageAnalysis 模式对象
         """
-        return await asyncio.to_thread(self._analyze_sync, image_url)
+        cached = self._get_cached("analyze", image_url)
+        if cached is not None:
+            return cached
+        result = await run_blocking_with_timeout(
+            self._analyze_sync, image_url, timeout=60.0, retries=2, label="图片分析"
+        )
+        self._set_cached("analyze", image_url, result)
+        return result
 
     def _analyze_sync(self, image_url: str) -> ImageAnalysis:
         """同步执行视觉分析（在线程池中运行）"""
@@ -153,7 +183,14 @@ class ImageAnalyzer:
             解析后的 dict，包含 subject_analysis / core_elements / rules /
             final_prompt / poetic_options / suggestions 等字段
         """
-        return await asyncio.to_thread(self._analyze_revival_sync, image_url)
+        cached = self._get_cached("analyze_for_revival", image_url)
+        if cached is not None:
+            return cached
+        result = await run_blocking_with_timeout(
+            self._analyze_revival_sync, image_url, timeout=60.0, retries=2, label="照片复兴分析"
+        )
+        self._set_cached("analyze_for_revival", image_url, result)
+        return result
 
     def _analyze_revival_sync(self, image_url: str) -> dict[str, Any]:
         """同步执行 Photo Revival 深度分析"""
@@ -239,7 +276,14 @@ class ImageAnalyzer:
             解析后的 dict，包含 subject_analysis / core_elements / rules /
             final_prompt / poetic_options / suggestions 等字段
         """
-        return await asyncio.to_thread(self._analyze_editorial_sync, image_url)
+        cached = self._get_cached("analyze_for_editorial", image_url)
+        if cached is not None:
+            return cached
+        result = await run_blocking_with_timeout(
+            self._analyze_editorial_sync, image_url, timeout=60.0, retries=2, label="风景海报分析"
+        )
+        self._set_cached("analyze_for_editorial", image_url, result)
+        return result
 
     def _analyze_editorial_sync(self, image_url: str) -> dict[str, Any]:
         """同步执行 City Editorial 深度分析"""
@@ -324,7 +368,14 @@ class ImageAnalyzer:
             解析后的 dict，包含 subject_analysis / core_elements / rules /
             final_prompt / poetic_options / suggestions 等字段
         """
-        return await asyncio.to_thread(self._analyze_abstract_sync, image_url)
+        cached = self._get_cached("analyze_for_abstract", image_url)
+        if cached is not None:
+            return cached
+        result = await run_blocking_with_timeout(
+            self._analyze_abstract_sync, image_url, timeout=60.0, retries=2, label="抽象编辑分析"
+        )
+        self._set_cached("analyze_for_abstract", image_url, result)
+        return result
 
     def _analyze_abstract_sync(self, image_url: str) -> dict[str, Any]:
         """同步执行 Photo Abstract Editorial 深度分析"""
@@ -394,6 +445,68 @@ class ImageAnalyzer:
             len(data.get("poetic_options", [])),
         )
         return data
+
+    async def classify_category(self, image_url: str) -> str:
+        """
+        快速判断图片内容类别：landscape（城市/风景） vs portrait（人物/其他）。
+
+        使用极简 prompt，模型只需输出一个单词，响应速度远快于完整分析。
+
+        Args:
+            image_url: 待分析的图片地址
+
+        Returns:
+            "landscape" 或 "portrait"
+        """
+        return await run_blocking_with_timeout(
+            self._classify_category_sync, image_url,
+            timeout=30.0, retries=1, label="图片分类",
+        )
+
+    def _classify_category_sync(self, image_url: str) -> str:
+        """同步执行图片分类（在线程池中运行）"""
+        from dashscope import MultiModalConversation
+        from http import HTTPStatus
+
+        api_key = settings.dashscope.api_key.get_secret_value()
+        if not api_key:
+            raise AIServiceException("DashScope API Key 未配置")
+
+        messages = [
+            {
+                "role": "system",
+                "content": [{"text": (
+                    "判断图片主体类别。"
+                    "以城市、建筑、山川、风景、自然风光、天际线、街道为主输出 landscape；"
+                    "以人物、人像、宠物、室内近景、特写为主输出 portrait。"
+                    "仅输出一个单词：landscape 或 portrait"
+                )}],
+            },
+            {
+                "role": "user",
+                "content": [{"image": image_url}],
+            },
+        ]
+
+        logger.info("[图片分类] 调用 VL 模型: image_url=%s", image_url)
+        start_time = time.time()
+
+        try:
+            rsp = MultiModalConversation.call(
+                model=self.model, messages=messages, api_key=api_key,
+            )
+        except Exception as exc:
+            elapsed = time.time() - start_time
+            logger.warning("[图片分类] 调用异常 (%.1fs): %s", elapsed, exc)
+            return "portrait"
+
+        elapsed = time.time() - start_time
+        text = self._extract_text(rsp).strip().lower()
+        logger.info("[图片分类] 结果: %s (%.1fs)", text, elapsed)
+
+        if "landscape" in text:
+            return "landscape"
+        return "portrait"
 
     @staticmethod
     def _safe_to_dict(obj: Any) -> Any:

@@ -1,6 +1,13 @@
-// 鉴权相关接口：注册、登录、刷新、登出、获取当前用户
+// 鉴权相关接口：注册、登录、刷新、登出、获取当前用户、发送验证码
 import { request } from './request'
 import type { AuthResult, LoginParams, RegisterParams, UserInfo } from '@/types'
+
+/**
+ * 发送邮箱验证码（注册前调用）
+ */
+export function sendVerificationCode(email: string) {
+  return request<void>({ url: '/auth/send-code', method: 'post', data: { email } })
+}
 
 /**
  * 注册

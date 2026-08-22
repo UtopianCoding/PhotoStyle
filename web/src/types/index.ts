@@ -34,7 +34,9 @@ export interface Skill {
   name: string
   description: string
   preview: string
+  previews: string[]
   category: string
+  needAnalysis: boolean
 }
 
 /**
@@ -132,8 +134,14 @@ export interface UserInfo {
   email: string
   nickname: string
   avatarUrl?: string
+  /** 积分余额 */
+  credits?: number
+  /** 邀请码 */
+  referralCode?: string
   /** 是否为管理员 */
   isAdmin?: boolean
+  /** 权限码集合 */
+  permissions?: string[]
 }
 
 /**
@@ -164,6 +172,9 @@ export interface LoginParams {
  */
 export interface RegisterParams extends LoginParams {
   nickname: string
+  code: string
+  /** 邀请码（可选） */
+  referralCode?: string
 }
 
 /**
@@ -183,6 +194,35 @@ export interface AuthResult {
 export interface PageResult<T> {
   items: T[]
   total: number
+}
+
+/**
+ * 模型交互记录项（对齐后端 ConversationItem）
+ * 记录每次与 AI 模型交互的输入（原图 + 提示词）与输出（结果图）
+ */
+export interface ConversationItem {
+  interactionId: string
+  taskId: string
+  skillId: string
+  provider: string
+  inputImageUrl: string
+  promptSent: string
+  extraPrompt?: string | null
+  feedback?: string | null
+  location?: string | null
+  outputImageUrls: string[]
+  outputCount: number
+  status: string
+  errorMessage?: string | null
+  durationMs?: number | null
+  createdAt: string
+}
+
+/**
+ * 模型交互记录详情（对齐后端 ConversationDetail，含服务商原始响应）
+ */
+export interface ConversationDetail extends ConversationItem {
+  providerResponse?: string | null
 }
 
 // ============================================================
@@ -336,10 +376,130 @@ export interface AdminUserItem {
   userId: string
   email: string
   nickname: string | null
+  avatarUrl?: string | null
   status: string
   isAdmin: boolean
+  permissions: string[]
   credits: number
   usageToday: number
   usageLimit: number
   createdAt: string | null
+}
+
+/**
+ * 个人资料更新（用户本人可修改）
+ */
+export interface UserUpdate {
+  nickname?: string | null
+  avatarUrl?: string | null
+}
+
+/**
+ * 管理员更新用户（可分配权限、状态、管理员标记等）
+ */
+export interface AdminUserUpdate {
+  nickname?: string | null
+  avatarUrl?: string | null
+  status?: string | null
+  isAdmin?: boolean | null
+  permissions?: string[] | null
+}
+
+/**
+ * 权限目录项
+ */
+export interface PermissionItem {
+  code: string
+  label: string
+  group: string
+  description: string
+}
+
+/**
+ * 角色预设
+ */
+export interface RolePreset {
+  key: string
+  label: string
+  permissions: string[]
+  isAdmin: boolean
+}
+
+/**
+ * 权限目录响应
+ */
+export interface PermissionCatalog {
+  permissions: PermissionItem[]
+  rolePresets: RolePreset[]
+}
+
+/**
+ * 头像上传响应
+ */
+export interface AvatarUploadResponse {
+  avatarUrl: string
+}
+
+// ============================================================
+// 积分系统
+// ============================================================
+
+/**
+ * 积分余额响应
+ */
+export interface CreditBalanceResponse {
+  credits: number
+  referralCode: string | null
+  inviteCount: number
+}
+
+/**
+ * 积分交易记录项
+ */
+export interface CreditTransactionItem {
+  transactionId: string
+  transactionType: string
+  amount: number
+  balanceAfter: number
+  description: string | null
+  taskId: string | null
+  relatedUserId: string | null
+  createdAt: string
+}
+
+/**
+ * 积分交易历史响应
+ */
+export interface CreditHistoryResponse {
+  items: CreditTransactionItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/**
+ * 充值请求
+ */
+export interface RechargeRequest {
+  amount: number
+}
+
+/**
+ * 充值响应
+ */
+export interface RechargeResponse {
+  transactionId: string
+  amount: number
+  newBalance: number
+}
+
+/**
+ * 邀请信息响应
+ */
+export interface InviteInfoResponse {
+  referralCode: string
+  inviteCount: number
+  totalRewards: number
+  inviteLink: string
+  rewardPerInvite: number
 }

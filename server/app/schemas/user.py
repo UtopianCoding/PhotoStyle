@@ -19,6 +19,16 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=6, max_length=64, description="密码")
     # 昵称
     nickname: str | None = Field(default=None, description="昵称")
+    # 邮箱验证码
+    code: str = Field(..., min_length=6, max_length=6, description="邮箱验证码")
+    # 邀请码（可选，由邀请人提供）
+    referral_code: str | None = Field(default=None, max_length=16, description="邀请码")
+
+
+class SendCodeRequest(BaseModel):
+    """发送验证码请求"""
+
+    email: EmailStr = Field(..., description="目标邮箱")
 
 
 class UserLogin(BaseModel):
@@ -66,6 +76,8 @@ class UserInfo(BaseModel):
     avatar_url: str | None = None
     # 积分余额
     credits: int = 0
+    # 邀请码
+    referral_code: str | None = None
     # 今日已用次数
     usage_today: int = 0
     # 每日上限
@@ -74,8 +86,96 @@ class UserInfo(BaseModel):
     status: str = "active"
     # 是否为管理员
     is_admin: bool = False
+    # 权限码集合
+    permissions: list[str] = Field(default_factory=list, description="权限码集合")
     # 创建时间
     created_at: datetime | None = None
+
+
+class UserUpdate(BaseModel):
+    """个人资料更新（用户本人可修改的字段）"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    # 昵称
+    nickname: str | None = Field(default=None, description="昵称")
+    # 头像地址
+    avatar_url: str | None = Field(default=None, description="头像地址")
+
+
+class AdminUserUpdate(BaseModel):
+    """管理员更新用户（可分配权限、状态、管理员标记等）"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    # 昵称
+    nickname: str | None = Field(default=None, description="昵称")
+    # 头像地址
+    avatar_url: str | None = Field(default=None, description="头像地址")
+    # 账号状态：active / disabled
+    status: str | None = Field(default=None, description="账号状态")
+    # 是否管理员
+    is_admin: bool | None = Field(default=None, description="是否管理员")
+    # 权限码集合（全量覆盖）
+    permissions: list[str] | None = Field(default=None, description="权限码集合")
+
+
+class PermissionItem(BaseModel):
+    """权限目录项（用于前端渲染分配界面）"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    # 权限码
+    code: str
+    # 展示名
+    label: str
+    # 分组
+    group: str
+    # 说明
+    description: str
+
+
+class RolePreset(BaseModel):
+    """角色预设（便于管理员快速分配权限）"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    # 角色键
+    key: str
+    # 展示名
+    label: str
+    # 权限码集合
+    permissions: list[str]
+    # 是否为超级管理员角色
+    is_admin: bool = False
+
+
+class PermissionCatalog(BaseModel):
+    """权限目录响应（权限项 + 角色预设）"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    # 权限项列表
+    permissions: list[PermissionItem]
+    # 角色预设列表
+    role_presets: list[RolePreset]
 
 
 class AuthResponse(BaseModel):

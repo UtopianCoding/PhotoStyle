@@ -91,30 +91,24 @@ class ImageService:
         if not mime_type:
             mime_type = info.mime_type
 
-        # 2. 压缩原图
-        compressed_bytes = await asyncio.to_thread(
-            self.processor.compress_image, file_bytes
+        # 2. 压缩原图 + 生成缩略图（两者均基于 file_bytes，可并行）
+        compressed_bytes, thumbnail_bytes = await asyncio.gather(
+            asyncio.to_thread(self.processor.compress_image, file_bytes),
+            asyncio.to_thread(self.processor.generate_thumbnail, file_bytes),
         )
         compressed = len(compressed_bytes) < len(file_bytes)
         compressed_ratio = (
             round(len(compressed_bytes) / len(file_bytes), 4) if file_bytes else None
         )
 
-        # 3. 生成缩略图
-        thumbnail_bytes = await asyncio.to_thread(
-            self.processor.generate_thumbnail, file_bytes
-        )
-
-        # 4. 对象存储上传原图与缩略图
+        # 3. 对象存储上传原图与缩略图（两者互不依赖，可并行）
         ext = self._mime_to_ext(mime_type)
         original_key = self._object_key(user_id, ext, prefix="images")
         thumb_key = self._object_key(user_id, "jpg", prefix="thumbnails")
 
-        original_url = await asyncio.to_thread(
-            self.storage.upload, original_key, compressed_bytes, mime_type
-        )
-        thumbnail_url = await asyncio.to_thread(
-            self.storage.upload, thumb_key, thumbnail_bytes, "image/jpeg"
+        original_url, thumbnail_url = await asyncio.gather(
+            asyncio.to_thread(self.storage.upload, original_key, compressed_bytes, mime_type),
+            asyncio.to_thread(self.storage.upload, thumb_key, thumbnail_bytes, "image/jpeg"),
         )
 
         # 5. 落库
@@ -144,6 +138,42 @@ class ImageService:
             compressed_ratio=image.compressed_ratio,
             created_at=image.created_at,
         )
+
+    # -------------------- 头像上传 --------------------
+
+    async def upload_avatar(
+        self,
+        user_id: str,
+        file_bytes: bytes,
+        mime_type: str,
+    ) -> str:
+        """
+        上传用户头像：压缩后存入 avatars 前缀，不创建图片库记录，返回可访问 URL。
+
+        Args:
+            user_id: 用户ID
+            file_bytes: 图片字节流
+            mime_type: MIME 类型
+
+        Returns:
+            头像可访问地址
+        """
+        if not file_bytes:
+            raise ValidationException("上传文件为空")
+
+        info = self.processor.get_image_info(file_bytes)
+        if not mime_type:
+            mime_type = info.mime_type
+
+        compressed_bytes = await asyncio.to_thread(
+            self.processor.compress_image, file_bytes
+        )
+        ext = self._mime_to_ext(mime_type)
+        key = self._object_key(user_id, ext, prefix="avatars")
+        url = await asyncio.to_thread(
+            self.storage.upload, key, compressed_bytes, mime_type
+        )
+        return url
 
     # -------------------- 查询 --------------------
 

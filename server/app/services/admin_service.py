@@ -12,6 +12,11 @@ from pathlib import Path
 
 from dotenv import set_key
 
+from app.core.permissions import (
+    PERMISSION_CATALOG,
+    ROLE_PRESETS,
+    normalize_permissions,
+)
 from app.schemas.admin import (
     AdminUserItem,
     AppConfigRead,
@@ -24,6 +29,11 @@ from app.schemas.admin import (
     StorageConfig,
     SystemConfigRead,
     SystemConfigUpdate,
+)
+from app.schemas.user import (
+    PermissionCatalog,
+    PermissionItem,
+    RolePreset,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,10 +254,32 @@ class AdminService:
             user_id=user.user_id,
             email=user.email,
             nickname=user.nickname,
+            avatar_url=user.avatar_url,
             status=user.status,
             is_admin=user.is_admin,
+            permissions=normalize_permissions(user.permissions),
             credits=user.credits,
             usage_today=user.usage_today,
             usage_limit=user.usage_limit,
             created_at=created_at.isoformat() if created_at else None,
         )
+
+    @staticmethod
+    def get_permission_catalog() -> PermissionCatalog:
+        """返回权限目录（权限项 + 角色预设），用于前端渲染分配界面"""
+        permissions = [
+            PermissionItem(
+                code=p.code, label=p.label, group=p.group, description=p.description
+            )
+            for p in PERMISSION_CATALOG
+        ]
+        role_presets = [
+            RolePreset(
+                key=key,
+                label=val["label"],
+                permissions=list(val["permissions"]),
+                is_admin=val.get("is_admin", False),
+            )
+            for key, val in ROLE_PRESETS.items()
+        ]
+        return PermissionCatalog(permissions=permissions, role_presets=role_presets)

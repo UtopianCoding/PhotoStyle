@@ -330,6 +330,33 @@ class LoggingConfig(BaseSettings):
 
 
 # ============================================================
+# SMTP 邮件配置
+# ============================================================
+class SmtpConfig(BaseSettings):
+    """SMTP 邮件发送配置（用于注册验证码等）"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="SMTP_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # SMTP 服务器地址
+    host: str = "smtp.gmail.com"
+    # SMTP 端口（465=SSL, 587=TLS）
+    port: int = 587
+    # 发件人邮箱
+    username: str = ""
+    # 发件人密码 / 授权码（敏感信息）
+    password: SecretStr = SecretStr("")
+    # 发件人显示名称
+    from_name: str = "PhotoStyle"
+    # 是否启用 TLS
+    use_tls: bool = True
+
+
+# ============================================================
 # 限流配置
 # ============================================================
 class RateLimitConfig(BaseSettings):
@@ -344,6 +371,35 @@ class RateLimitConfig(BaseSettings):
 
     # 免费用户每日风格转换次数上限
     free_user_daily_limit: int = 10
+
+
+# ============================================================
+# 支付宝配置
+# ============================================================
+class AlipayConfig(BaseSettings):
+    """支付宝当面付配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="ALIPAY_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # 是否启用支付宝支付
+    enabled: bool = False
+    # 支付宝应用 AppID
+    app_id: str = ""
+    # 商户私钥（RSA2 私钥，PKCS8 格式）
+    private_key: str = ""
+    # 支付宝公钥（用于验证回调签名）
+    alipay_public_key: str = ""
+    # 签名算法：RSA2
+    sign_type: str = "RSA2"
+    # 编码格式
+    charset: str = "utf-8"
+    # 支付宝网关
+    gateway: str = "https://openapi.alipaydev.com/gateway.do"  # 沙箱网关
 
 
 # ============================================================
@@ -391,8 +447,12 @@ class Settings(BaseSettings):
     cors: CORSConfig = CORSConfig()
     # 日志配置
     logging: LoggingConfig = LoggingConfig()
+    # SMTP 邮件配置
+    smtp: SmtpConfig = SmtpConfig()
     # 限流配置
     rate_limit: RateLimitConfig = RateLimitConfig()
+    # 支付宝配置
+    alipay: AlipayConfig = AlipayConfig()
 
 
 # 全局配置单例，供应用各模块直接导入使用

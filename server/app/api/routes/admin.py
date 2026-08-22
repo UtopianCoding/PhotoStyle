@@ -9,11 +9,13 @@ import logging
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
-from app.api.deps import AdminServiceDep, AdminUser, DBSession
+from app.api.deps import AdminServiceDep, AdminUser, AuthServiceDep, DBSession
 from app.models.user import User
 from app.schemas.admin import AdminUserItem, SystemConfigRead, SystemConfigUpdate
 from app.schemas.common import ApiResponse, PageResponse
+from app.schemas.user import AdminUserUpdate, PermissionCatalog
 from app.services.admin_service import AdminService
+from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -70,4 +72,35 @@ async def list_users(
     return ApiResponse.success(
         data=PageResponse(total=total, page=page, page_size=page_size, items=items),
         message="ok",
+    )
+
+
+@router.get("/permissions", response_model=ApiResponse[PermissionCatalog])
+async def permission_catalog(
+    _: AdminUser,
+    admin_service: AdminServiceDep,
+) -> ApiResponse[PermissionCatalog]:
+    """获取权限目录（权限项 + 角色预设），用于用户权限分配界面"""
+    return ApiResponse.success(data=admin_service.get_permission_catalog(), message="ok")
+
+
+@router.put("/users/{user_id}", response_model=ApiResponse[AdminUserItem])
+async def update_user(
+    user_id: str,
+    _: AdminUser,
+    payload: AdminUserUpdate,
+    auth_service: AuthServiceDep,
+) -> ApiResponse[AdminUserItem]:
+    """
+    管理员更新用户（仅管理员可调用）。
+
+    可修改昵称、头像、账号状态、管理员标记，并全量分配权限码。
+    """
+    user = await auth_service.update_user_by_admin(user_id, payload)
+    if user is None:
+        from app.core.exceptions import NotFoundException
+
+        raise NotFoundException("用户不存在")
+    return ApiResponse.success(
+        data=AdminService.to_admin_user_item(user), message="用户已更新"
     )

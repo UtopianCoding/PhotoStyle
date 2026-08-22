@@ -14,20 +14,25 @@ process_style_task 作为模块级异步函数，自建数据库会话，避免�
 import asyncio
 import json
 import logging
+import os
+import time
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any
 
 import httpx
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.image_analyzer import ImageAnalyzer
 from app.ai.provider_manager import ProviderManager
 from app.ai.schemas import ImageOptions, ImageProviderRequest
+from app.config import settings
 from app.core.exceptions import (
     AIServiceException,
     ForbiddenException,
     ImageNotFoundException,
+    InsufficientCreditsException,
     RateLimitExceededException,
     SkillNotFoundException,
     TaskNotFoundException,
@@ -37,7 +42,9 @@ from app.core.location_translator import translate_location
 from app.core.skill_engine import SkillEngine
 from app.core.task_manager import TaskManager
 from app.database import async_session_maker
+from app.models.conversation import ModelInteraction
 from app.models.style_task import StyleTask
+from app.models.user import User
 from app.repositories.image_repo import ImageRepository
 from app.repositories.style_repo import StyleRepository
 from app.schemas.style import (
@@ -49,47 +56,34 @@ from app.schemas.style import (
     TaskStatusResponse,
 )
 
+# -------------------- 共享 HTTP 客户端（连接池复用） --------------------
+
+_HTTP_CLIENT: "httpx.AsyncClient | None" = None
+
+
+def _get_http_client() -> "httpx.AsyncClient":
+    """复用带连接池的 httpx 客户端，避免每次下载都新建 TCP/TLS 连接。"""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None or _HTTP_CLIENT.is_closed:
+        _HTTP_CLIENT = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            follow_redirects=True,
+        )
+    return _HTTP_CLIENT
+
+
+async def close_http_client() -> None:
+    """应用关闭时释放共享客户端。"""
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is not None and not _HTTP_CLIENT.is_closed:
+        await _HTTP_CLIENT.aclose()
+    _HTTP_CLIENT = None
+
+
 logger = logging.getLogger(__name__)
 
 # -------------------- 内容类别判定辅助 --------------------
-
-# 城市/风景/自然风光 的中英文关键词命中列表（任意命中即可推荐 city-editorial）
-LANDSCAPE_HINT_KEYWORDS = [
-    # 中文
-    "城市", "建筑", "天际线", "街道", "夜景", "大厦", "摩天", "桥梁", "河流",
-    "山川", "山脉", "湖泊", "海洋", "大海", "海岸", "海滩", "草原", "森林",
-    "日落", "日出", "夕阳", "朝霞", "晚霞", "云海", "雪山", "冰川", "瀑布",
-    "田野", "乡村", "田园", "梯田", "沙漠", "星空", "月亮", "圆月", "新月",
-    "塔", "古建", "城墙", "寺庙", "宫殿", "古镇",
-    # 英文
-    "city", "building", "skyscraper", "street", "skyline", "night view",
-    "bridge", "river", "mountain", "lake", "sea", "ocean", "beach", "coast",
-    "forest", "snow", "sunset", "sunrise", "moon", "cloud", "landscape",
-    "skyline", "tower", "temple", "cathedral", "desert", "waterfall",
-]
-
-
-def _classify_image_category(analysis_text: str) -> str:
-    """
-    根据轻量分析拼接文本，判断内容属于 "landscape"（城市/风景）还是 "portrait"（人物/其他）。
-
-    命中 LANDSCAPE_HINT_KEYWORDS 中任意关键词即视为 landscape；
-    若关键词都没命中，再通过"明确提到人物类关键词"判为 portrait，否则默认 portrait。
-    """
-    if not analysis_text:
-        return "portrait"
-    text_lower = analysis_text.lower()
-    if any(kw.lower() in text_lower for kw in LANDSCAPE_HINT_KEYWORDS):
-        return "landscape"
-    # 兜底：如果明确提到 person / girl / boy / man / woman / portrait / 人物 / 女孩 / 男孩 等
-    portrait_kw = (
-        "person", "people", "girl", "boy", "man", "woman", "lady",
-        "portrait", "face", "character",
-        "人物", "人像", "女孩", "男孩", "女人", "男人", "女士", "男士", "肖像", "脸部",
-    )
-    if any(kw in analysis_text for kw in portrait_kw):
-        return "portrait"
-    return "portrait"
 
 
 def _pick_skill_id_by_category(category: str) -> str:
@@ -101,6 +95,9 @@ def _pick_skill_id_by_category(category: str) -> str:
 
 class StyleService:
     """风格转换服务"""
+
+    # 参考图 URL 缓存（skill_id -> url），避免每次生成都重复上传
+    _reference_image_cache: dict[str, str] = {}
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -140,43 +137,28 @@ class StyleService:
         if image.user_id != user_id:
             raise ForbiddenException("无权操作该图片")
 
-        # 2. 先轻量分析，得到 subject / scene / mood / colors / key_objects，用于内容分类
-        logger.info("[分析] 开始轻量分类分析: image_id=%s, image_url=%s", payload.image_id, image.original_url)
-        try:
-            quick = await self.analyzer.analyze(image.original_url)
-            quick_bundle = " ".join(
-                str(x) for x in [
-                    quick.subject, quick.scene, quick.mood, quick.composition,
-                    " ".join(quick.colors or []),
-                    " ".join(quick.key_objects or []),
-                ] if x
-            )
-        except Exception as exc:
-            # 轻量分析失败也不阻塞，按 portrait 默认走 photo-revival
-            logger.warning("[分析] 轻量分类失败，回退默认技能: %s", exc)
-            quick_bundle = ""
-
-        # 3. 分类并选择技能：用户指定了有效技能则优先使用，否则按内容自动推荐
-        category = _classify_image_category(quick_bundle)
-        auto_skill_id = _pick_skill_id_by_category(category)
-
-        # 所有可用技能 ID（与 skills 目录一致）
+        # 2. 选择技能：用户指定了有效技能则使用，否则走默认（photo-revival）
+        # 优化：跳过独立的 classify_category VL 调用（3-8s），
+        # 各深度分析 prompt 已在 JSON 输出中包含 category 字段，一次调用同时完成分类+分析。
         available_skills = {
             "photo-revival",
+            "photo-relic-editorial",
             "city-editorial",
             "photo-abstract-editorial",
             "fridge-magnet",
+            "ink-minimalist",
+            "memory-postcard",
+            "scenes-gathered-zine",
         }
         requested_skill = (payload.skill_id or "").strip()
         if requested_skill in available_skills:
             skill_id = requested_skill
             logger.info("[分析] 使用用户指定技能: %s", skill_id)
         else:
-            skill_id = auto_skill_id
-        logger.info("[分析] 内容类别判定: category=%s, auto_skill=%s, 实际使用 skill=%s",
-                    category, auto_skill_id, skill_id)
+            skill_id = "photo-revival"
+        logger.info("[分析] 使用技能: %s, image_id=%s", skill_id, payload.image_id)
 
-        # 4. 调用对应深度分析 prompt
+        # 3. 调用对应深度分析 prompt
         if skill_id == "city-editorial":
             analysis_data = await self.analyzer.analyze_for_editorial(image.original_url)
         elif skill_id == "photo-abstract-editorial":
@@ -193,7 +175,7 @@ class StyleService:
                 logger.warning("[分析] 地址翻译失败，使用原文: %s", exc)
                 location_en = raw_location
 
-            final_prompt = self.skill_engine.generate_prompt(
+            final_prompt = await self.skill_engine.generate_prompt_async(
                 image_url=image.original_url,
                 skill_id=skill_id,
                 extra_prompt=payload.extra_prompt,
@@ -228,14 +210,175 @@ class StyleService:
                     "若底部文字位置偏移，可追加：bottom typography vertically centered and consistent",
                 ],
             }
+        elif skill_id == "ink-minimalist":
+            # 水墨扁平重构插画：固定模板风格，无需 VL 深度分析；
+            # 直接通过 SkillEngine 按模板 + 原图地址生成最终提示词。
+            final_prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image.original_url,
+                skill_id=skill_id,
+                extra_prompt=payload.extra_prompt,
+                options={},
+            )
+            analysis_data = {
+                "subject_analysis": (
+                    "水墨扁平重构插画。提取原图景物解构为极简几何形态，"
+                    "运用分层平涂柔和色块与毛笔淡墨晕染笔触，"
+                    "在米白哑光特种纸留白底色上呈现干净高级的学术感视觉效果。"
+                ),
+                "core_elements": [
+                    "米白哑光特种纸质感底色，大面积纯留白",
+                    "居中偏上的极简几何插画，严格复刻原图配色",
+                    "无锐角硬边，全圆润流畅弧线组合",
+                    "分层平涂色块 + 毛笔淡墨晕染笔触",
+                    "底部居中排版：优雅衬线手写体英文标题 + 小号无衬线英文描述短句",
+                ],
+                "rules": {
+                    "composition": "竖版 2:3，主体居中偏上，四周大量留白",
+                    "mainArea": "几何形态解构原图上半景物，摒弃锐利硬边",
+                    "negativeSpace": "米白色哑光特种纸底色，大面积纯留白",
+                    "style": "分层平涂色块 + 毛笔淡墨晕染，色彩如水墨洇散自然过渡",
+                    "typography": "画面最底端居中排版，首行衬线手写体英文标题，次行小号无衬线英文描述",
+                    "avoid": "锐利硬边、细碎纹理、冗余杂物、复杂光影、多余装饰元素",
+                },
+                "special_notes": "彻底剔除所有细碎纹理、冗余杂物及复杂光影，仅保留纯粹的结构神韵与情感内核。",
+                "final_prompt": final_prompt,
+                "poetic_options": [],
+                "suggestions": [
+                    "若色块过渡不够自然，可在额外要求中追加：make the ink wash blending softer and more gradient-like",
+                    "若留白比例不足，可追加：increase negative space around the illustration with wider margins",
+                ],
+            }
+        elif skill_id == "memory-postcard":
+            # 视觉记忆明信片：固定模板风格，无需 VL 深度分析；
+            # 直接通过 SkillEngine 按模板 + 原图地址生成最终提示词。
+            final_prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image.original_url,
+                skill_id=skill_id,
+                extra_prompt=payload.extra_prompt,
+                options={},
+            )
+            analysis_data = {
+                "subject_analysis": (
+                    "编辑式视觉记忆明信片。忠实保留原图作为事实锚点，"
+                    "搭配源自原图色彩与空间关系的水彩抽象记忆面板，"
+                    "整体呈现安静、诗意、现代的编辑式档案作品质感。"
+                ),
+                "core_elements": [
+                    "原图忠实保留（人物、建筑、光线、色彩关系不变）",
+                    "抽象水彩记忆面板（神似而非形似，节奏/体量/氛围重新表达）",
+                    "三枚手绘水彩色块（情感记忆色 + 深色结构色 + 浅色中性色）",
+                    "英文衬线标题（2-5词，克制手写钢笔风格）",
+                    "安静留白呼吸区（32%-40%，源自原图氛围温度）",
+                ],
+                "rules": {
+                    "composition": "竖版 3:4，自适应双面板布局（横版左右分/竖版上下分）",
+                    "photoRegion": "原图忠实保留，仅允许等比缩放和克制裁切",
+                    "companionPanel": "抽象水彩记忆场域，母题占面板 35%-50%，源自原图视觉事实",
+                    "colorSystem": "仅从原照片提取配色，降低饱和度，和谐排列",
+                    "typography": "英文衬线标题 2-5 词，克制手写风格，位于面板内母题下方或侧边",
+                    "ground": "源自原图氛围温度的淡色底面（冷雾白/暖阳象牙/灰绿薄雾/淡蓝水洗）",
+                    "avoid": "重画原图/发明场景/渐变溶解/撕边投影/1:1水彩复制/密集装饰",
+                },
+                "special_notes": "整体如一件保存完好的视觉记忆器物，不是装饰过的照片。记忆面板通过缩减、半透明、断裂轮廓、位移、节奏、体量、色彩记忆重新表达原图精神。",
+                "final_prompt": final_prompt,
+                "poetic_options": [],
+                "suggestions": [
+                    "若记忆面板过于具象，可追加：increase abstraction level, use rhythm and mass rather than literal shapes",
+                    "若色块与面板不够融合，可追加：embed swatches within the field's natural flow, not as isolated chips",
+                ],
+            }
+        elif skill_id == "marker-child-doodle":
+            # 马克笔童画：固定模板风格，无需 VL 深度分析；
+            # 直接通过 SkillEngine 按模板 + 原图地址 + 签名生成最终提示词。
+            raw_signature = (payload.signature or "").strip() or "Utopian"
+            final_prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image.original_url,
+                skill_id=skill_id,
+                extra_prompt=payload.extra_prompt,
+                options={"signature": raw_signature},
+            )
+            analysis_data = {
+                "subject_analysis": (
+                    "马克笔童画风格。把真实照片转换成粗轮廓、完整色块、手涂边缘的马克笔画，"
+                    "像从儿童速写本上撕下来的马克笔页。"
+                ),
+                "core_elements": [
+                    "石板灰蓝粗轮廓线（粗、钝、抖、粗细不匀，局部积墨）",
+                    "马克笔平涂色块（填满为主，减少白点白洞白丝）",
+                    "Q版夸张比例（头大身小脖子短，团块手，方块眼）",
+                    "环境删除，仅保留互动道具和支撑面线",
+                    "右下角潦草签名 wibi",
+                ],
+                "rules": {
+                    "composition": "1:1 方形，白纸或黑底（根据原图明暗自动选择）",
+                    "outline": "石板灰蓝粗轮廓，粗细不匀，整体连续只有少量自然断口",
+                    "colorBlock": "马克笔平涂填满，手绘感集中在外围边缘错位和溢出",
+                    "palette": "石板灰蓝线 + 人物肤色 + 一个服装主色 + 黑色",
+                    "signature": "右下角潦草 wibi，歪斜带拖尾手势",
+                    "avoid": "渐变/精致数码线稿/均匀虚线/色块大面积留白/半身补腿/删除宠物",
+                },
+                "special_notes": "原图决定内容（画谁画什么），参考图只决定画法（怎样画）。半身照片不补出腿脚，宠物同框时人和动物都要画。",
+                "final_prompt": final_prompt,
+                "poetic_options": [],
+                "suggestions": [
+                    "若轮廓太细太均匀，可追加：make outlines thicker, rougher, and more uneven with ink pooling",
+                    "若色块不够饱满，可追加：fill color blocks more completely, reduce white spots and gaps",
+                ],
+            }
+        elif skill_id == "scenes-gathered-zine":
+            # 实景拼贴：固定模板风格，无需 VL 深度分析；
+            # 直接通过 SkillEngine 按模板 + 原图地址生成最终提示词。
+            final_prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image.original_url,
+                skill_id=skill_id,
+                extra_prompt=payload.extra_prompt,
+                options={},
+            )
+            analysis_data = {
+                "subject_analysis": (
+                    "实景拼贴海报。忠实保留原图照片作为视觉锚点，"
+                    "搭配大面积抽象插画场域重新诠释场景元素，"
+                    "以一个高饱和色作为构图结构，可见手撕纤维边缘，"
+                    "奶油色纸面大面积留白，整体安静、触感、沉思。"
+                ),
+                "core_elements": [
+                    "照片忠实保留（主体、空间关系、地平线、视线方向不变）",
+                    "大面积抽象插画场域（45-70%，中等抽象度，去除60-80%细节）",
+                    "一个高饱和色作为构图结构（与原图色彩关联）",
+                    "可见手撕纤维边缘（照片与纸面过渡）",
+                    "克制的微文字系统（2-5词，衬线/打字机字体）",
+                ],
+                "rules": {
+                    "composition": "竖版 3:5，照片约占 30-50%，插画场域约占 45-70%",
+                    "photoRegion": "照片忠实保留，不重绘不滤镜化，保留原始场景辨识度",
+                    "illustrationField": "一种主要插画语法（剪影/轮廓/色域/节奏/剪纸），活跃墨水占15-35%",
+                    "chromaticStructure": "仅一个额外高饱和色，必须与插画共享源形状，不可漂浮装饰",
+                    "tornEdge": "可见手撕轮廓，不规则缺口+纤维羽化边，占照片周长35-70%",
+                    "avoid": "数码拼贴效果/投影/装饰边框/渐变背景/矢量风格/超过一个额外色",
+                },
+                "special_notes": "复杂场景（密集树木/人群）需进一步简化：保留一个主体树冠+1-3个方向性枝条姿态，省略85-95%的单独叶片。",
+                "final_prompt": final_prompt,
+                "poetic_options": [],
+                "suggestions": [
+                    "若撕纸边缘不够明显，可追加：make the torn paper edge more prominent and fibrous along the photo boundary",
+                    "若插画过于写实，可追加：increase abstraction level, merge details into larger masses, use flat ink or cut-paper grammar",
+                ],
+            }
         else:
             analysis_data = await self.analyzer.analyze_for_revival(image.original_url)
 
-        # 5. 如果有额外提示词，追加到 final_prompt
+        # 4. 如果有额外提示词，追加到 final_prompt
         final_prompt = analysis_data.get("final_prompt", "")
         if payload.extra_prompt and payload.extra_prompt.strip():
             final_prompt = final_prompt.rstrip(".") + f". Additional requirement: {payload.extra_prompt.strip()}."
             analysis_data["final_prompt"] = final_prompt
+
+        # 5. 从深度分析结果中提取类别，用于推荐技能（仅当用户未指定技能时）
+        # 各深度分析 prompt 已在 JSON 中输出 category 字段
+        if not requested_skill:
+            detected_category = analysis_data.get("category", "portrait")
+            skill_id = _pick_skill_id_by_category(detected_category)
+            logger.info("[分析] 深度分析检测到类别: %s, 推荐技能: %s", detected_category, skill_id)
 
         logger.info("[分析] 完成: skill=%s, final_prompt 长度=%d, poetic_options=%d",
                      skill_id, len(final_prompt), len(analysis_data.get("poetic_options", [])))
@@ -278,15 +421,41 @@ class StyleService:
 
         # 2. 校验技能存在
         try:
-            skill_config = self.skill_engine.load_skill(payload.skill_id)
+            skill_config = await self.skill_engine.load_skill_async(payload.skill_id)
         except SkillNotFoundException:
             raise
         except Exception as exc:
             raise SkillNotFoundException(f"技能 [{payload.skill_id}] 加载失败: {exc}") from exc
 
-        # 3. 校验每日额度（通过图片所属用户）
-        # 注：每日用量统计由调用方在成功时累加，此处仅做上限校验
-        # 留作扩展：可在此查询用户当日用量
+        # 3. 校验每日额度（仅非管理员用户）
+        stmt = select(User).where(User.user_id == user_id)
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise ForbiddenException("用户不存在")
+        
+        if not user.is_admin:
+            # 检查是否需要重置每日使用次数（如果 updated_at 不是今天）
+            today = date.today()
+            last_usage_date = user.updated_at.date() if user.updated_at else None
+            
+            if last_usage_date != today:
+                # 重置为 0
+                user.usage_today = 0
+            
+            # 检查是否超过每日限制
+            daily_limit = settings.rate_limit.free_user_daily_limit
+            if user.usage_today >= daily_limit:
+                raise RateLimitExceededException(
+                    f"今日转换次数已达上限（{daily_limit} 次），请明天再试"
+                )
+            
+            # 检查积分余额（每次转换消耗 2 积分）
+            credit_cost = 2
+            if user.credits < credit_cost:
+                raise InsufficientCreditsException(
+                    f"积分不足，当前余额 {user.credits}，需要 {credit_cost} 积分。请先充值"
+                )
 
         # 4. 序列化选项
         options_dict = payload.options.model_dump()
@@ -295,6 +464,10 @@ class StyleService:
         # 供 _execute 阶段权威重生成提示词（即便前端传入了旧风格的 finalPrompt 也不会用错）。
         if payload.location:
             options_dict["location"] = payload.location
+        
+        # 马克笔童画需要签名：透传到后台任务
+        if payload.signature:
+            options_dict["signature"] = payload.signature
 
         # 4.1 以技能声明的输出比例为准（前端通常不单独设置比例）。
         # 例如冰箱贴/城市海报声明 2:3，必须确保实际生成尺寸为 2:3 而非默认 3:4。
@@ -380,6 +553,15 @@ class StyleService:
         poetic_text = options.pop("_poetic_text", None)
         feedback = options.pop("_feedback", None)
 
+        # 加载技能配置，判断是否需要分析图片
+        need_analysis = True
+        try:
+            skill_config = await self.skill_engine.load_skill_async(task.skill_id)
+            need_analysis = skill_config.need_analysis
+            logger.info("[风格转换] 技能配置: skill_id=%s, need_analysis=%s", task.skill_id, need_analysis)
+        except Exception as exc:
+            logger.warning("[风格转换] 加载技能配置失败，默认需要分析: %s", exc)
+
         # 基础提示词构建
         if final_prompt:
             # 预分析 / 重新生成：直接使用传入的完整提示词，跳过 VL 深度分析。
@@ -391,13 +573,21 @@ class StyleService:
             await self.db.commit()
             prompt = final_prompt
             analysis: dict[str, Any] = {}
-        elif task.skill_id == "fridge-magnet":
-            # 冰箱贴首次生成：固定模板风格，跳过 VL 分析，提示词在阶段2.5 按模板 + 地点补齐
+        elif not need_analysis:
+            # 技能配置标记为不需要分析：跳过 VL 分析，直接使用模板生成提示词
+            logger.info("[风格转换] 技能无需分析，跳过 VL 分析, skill_id=%s", task.skill_id)
             await self.repo.update_task_status(
                 task.task_id, status="running", stage="generating", progress=30
             )
             await self.db.commit()
-            prompt = ""
+            # 从数据库读取的提示词模板生成最终提示词（而非空字符串）
+            prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image_url,
+                skill_id=task.skill_id,
+                extra_prompt=task.extra_prompt,
+                options=options,
+                image_analysis={},
+            )
             analysis: dict[str, Any] = {}
         else:
             # 无预分析结果，走原有流程：分析 → 生成提示词
@@ -417,13 +607,13 @@ class StyleService:
                 logger.warning("[风格转换] 阶段1: 图片分析失败，降级为空分析: %s", exc)
                 analysis = {}
 
-            # 阶段2：生成提示词
+            # 阶段2：生成提示词（仅更新 progress，无需额外 commit，最终统一提交）
             await self.repo.update_task_status(
                 task.task_id, stage="generating", progress=30
             )
-            await self.db.commit()
+            await self.db.flush()
 
-            prompt = self.skill_engine.generate_prompt(
+            prompt = await self.skill_engine.generate_prompt_async(
                 image_url=image_url,
                 skill_id=task.skill_id,
                 extra_prompt=task.extra_prompt,
@@ -442,7 +632,7 @@ class StyleService:
                 except Exception as exc:
                     logger.warning("[风格转换] 冰箱贴地点翻译失败，使用原文: %s", exc)
                     loc_en = raw_loc
-                prompt = self.skill_engine.generate_prompt(
+                prompt = await self.skill_engine.generate_prompt_async(
                     image_url=image_url,
                     skill_id=task.skill_id,
                     extra_prompt=task.extra_prompt,
@@ -451,12 +641,53 @@ class StyleService:
                 logger.info("[风格转换] 冰箱贴权威重生成提示词, task_id=%s, location=%s", task.task_id, loc_en)
             elif not prompt:
                 # 既无地点也无预分析提示词：退回模板默认（City, Country）
-                prompt = self.skill_engine.generate_prompt(
+                prompt = await self.skill_engine.generate_prompt_async(
                     image_url=image_url,
                     skill_id=task.skill_id,
                     extra_prompt=task.extra_prompt,
                     options={},
                 )
+
+        # 水墨扁平重构插画首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
+        if task.skill_id == "ink-minimalist" and not final_prompt and not prompt:
+            prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image_url,
+                skill_id=task.skill_id,
+                extra_prompt=task.extra_prompt,
+                options={},
+            )
+            logger.info("[风格转换] 水墨扁平重构插画权威重生成提示词, task_id=%s", task.task_id)
+
+        # 视觉记忆明信片首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
+        if task.skill_id == "memory-postcard" and not final_prompt and not prompt:
+            prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image_url,
+                skill_id=task.skill_id,
+                extra_prompt=task.extra_prompt,
+                options={},
+            )
+            logger.info("[风格转换] 视觉记忆明信片权威重生成提示词, task_id=%s", task.task_id)
+
+        # 马克笔童画首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
+        if task.skill_id == "marker-child-doodle" and not final_prompt and not prompt:
+            signature = options.get("signature", "Utopian")
+            prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image_url,
+                skill_id=task.skill_id,
+                extra_prompt=task.extra_prompt,
+                options={"signature": signature},
+            )
+            logger.info("[风格转换] 马克笔童画权威重生成提示词, task_id=%s, signature=%s", task.task_id, signature)
+
+        # 实景拼贴首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
+        if task.skill_id == "scenes-gathered-zine" and not final_prompt and not prompt:
+            prompt = await self.skill_engine.generate_prompt_async(
+                image_url=image_url,
+                skill_id=task.skill_id,
+                extra_prompt=task.extra_prompt,
+                options={},
+            )
+            logger.info("[风格转换] 实景拼贴权威重生成提示词, task_id=%s", task.task_id)
 
         # 阶段2.6：统一追加诗意小字与重新生成意见（仅在尚未包含时追加，避免重复）
         if poetic_text and "handwritten poetic note" not in prompt:
@@ -472,73 +703,133 @@ class StyleService:
             logger.info("[风格转换] 叠加重新生成意见, task_id=%s, feedback=%s", task.task_id, feedback[:200])
 
         # 阶段3：调用 Provider 生成
+        started_at = time.monotonic()
         logger.info("[风格转换] 阶段3: 开始调用 Provider, task_id=%s, provider=%s", task.task_id, task.provider)
+
+        # 加载风格参考图（仅对明确需要参考图的技能加载）
+        # 注意：使用内存缓存，首次调用后会缓存 URL，修改 SKILL.md 后需重启服务
+        _SKIP_REF_IMAGE_SKILLS = {"marker-child-doodle", "scenes-gathered-zine"}
+        if task.skill_id not in _SKIP_REF_IMAGE_SKILLS:
+            reference_images = await self._get_reference_images(task.skill_id)
+        else:
+            reference_images = []
+        if reference_images:
+            logger.info("[风格转换] 使用 %d 张参考图, skill_id=%s", len(reference_images), task.skill_id)
+
         provider_request = ImageProviderRequest(
             prompt=prompt,
             image_url=image_url,
+            reference_images=reference_images,
             options=ImageOptions(
                 ratio=options.get("ratio", "3:4"),
                 num_results=options.get("num_results", 1),
             ),
         )
-        response = await self.provider_manager.generate(
-            provider_request, preferred=task.provider
-        )
-        logger.info("[风格转换] 阶段3: Provider 返回, task_id=%s, status=%s, results=%d", task.task_id, response.status, len(response.results or []))
-
-        if response.status != "success" or not response.results:
-            raise AIServiceException(
-                response.error or "AI 生成未返回结果"
+        try:
+            response = await self.provider_manager.generate(
+                provider_request, preferred=task.provider
             )
+            logger.info("[风格转换] 阶段3: Provider 返回, task_id=%s, status=%s, results=%d", task.task_id, response.status, len(response.results or []))
 
-        # 阶段4：下载并上传结果
+            if response.status != "success" or not response.results:
+                raise AIServiceException(
+                    response.error or "AI 生成未返回结果"
+                )
+        except Exception as exc:
+            # 阶段3 调用失败：记录一次「失败」的模型交互（输入已知，无输出）
+            await self._record_interaction(
+                task=task,
+                image_url=image_url,
+                prompt=prompt,
+                extra_prompt=task.extra_prompt,
+                feedback=feedback,
+                options=options,
+                status="failed",
+                error_message=str(exc),
+                duration_ms=int((time.monotonic() - started_at) * 1000),
+            )
+            raise
+
+        # 阶段4：先用 Provider 临时 URL 立即写库，用户秒看结果；
+        # 后台异步下载+上传到永久存储后替换 URL。
         await self.repo.update_task_status(
             task.task_id, stage="uploading", progress=70
         )
-        await self.db.commit()
+        await self.db.flush()
 
-        for idx, result in enumerate(response.results):
-            result_bytes, content_type = await self._download(result.url)
-            ext = self._content_type_to_ext(content_type)
-            result_url = await self._upload_result(
-                task.user_id, result_bytes, ext, content_type
-            )
+        # 快速路径：立即写入结果记录（使用 Provider 临时 URL，通常有效期 24h+）
+        result_records: list[tuple[str, str]] = []  # (result_id, provider_url)
+        analysis_json_str = json.dumps(analysis, ensure_ascii=False) if analysis else None
+        provider_resp_str = json.dumps(
+            response.raw_response or {}, ensure_ascii=False, default=str
+        )
 
-            # 生成缩略图
-            thumbnail_url = None
-            try:
-                thumb_bytes = await asyncio.to_thread(
-                    self.processor.generate_thumbnail, result_bytes
-                )
-                thumbnail_url = await self._upload_result(
-                    task.user_id, thumb_bytes, "jpg", "image/jpeg", prefix="results/thumbnails"
-                )
-            except Exception as exc:
-                logger.warning("结果缩略图生成失败: %s", exc)
-
+        for r in response.results:
+            rid = uuid.uuid4().hex
             await self.repo.create_result(
-                result_id=uuid.uuid4().hex,
+                result_id=rid,
                 task_id=task.task_id,
                 user_id=task.user_id,
                 image_id=task.image_id,
                 skill_id=task.skill_id,
                 provider=task.provider,
-                result_url=result_url,
-                thumbnail_url=thumbnail_url,
+                result_url=r.url,  # Provider 临时 URL，立即可用
+                thumbnail_url=None,
                 prompt_used=prompt,
-                analysis_json=json.dumps(analysis, ensure_ascii=False) if analysis else None,
-                provider_response=json.dumps(
-                    response.raw_response or {}, ensure_ascii=False, default=str
-                ),
+                analysis_json=analysis_json_str,
+                provider_response=provider_resp_str,
                 favorite=False,
                 credits_used=1,
             )
+            result_records.append((rid, r.url))
 
-        # 阶段5：完成
+        # 记录模型交互并标记任务成功 —— 用户此刻即可看到结果
+        output_urls = [url for _, url in result_records]
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        await self._record_interaction(
+            task=task,
+            image_url=image_url,
+            prompt=prompt,
+            extra_prompt=task.extra_prompt,
+            feedback=feedback,
+            options=options,
+            status="success",
+            output_image_urls=output_urls,
+            provider_response=response.raw_response,
+            duration_ms=duration_ms,
+        )
+
+        # 阶段5：标记任务完成 + 扣减用户积分
         await self.repo.update_task_status(
             task.task_id, status="success", stage="done", progress=100
         )
+        # 扣减积分（每次转换消耗 2 积分，非管理员用户）
+        stmt = select(User).where(User.user_id == task.user_id)
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user and not user.is_admin:
+            from app.services.credit_service import CreditService
+            credit_service = CreditService(self.db)
+            credit_cost = 2
+            await credit_service.deduct_credits(
+                user_id=task.user_id,
+                amount=credit_cost,
+                transaction_type="convert_cost",
+                description=f"风格转换消耗积分（技能: {task.skill_id}）",
+                task_id=task.task_id,
+            )
         await self.db.commit()
+
+        # 后台异步：下载结果图 → 上传永久存储 → 生成缩略图 → 替换 URL
+        # 使用独立 DB 会话，避免与主会话冲突
+        for rid, provider_url in result_records:
+            asyncio.create_task(
+                self._background_persist_result(
+                    user_id=task.user_id,
+                    result_id=rid,
+                    provider_url=provider_url,
+                )
+            )
 
     # -------------------- 任务状态 --------------------
 
@@ -602,14 +893,145 @@ class StyleService:
 
     # -------------------- 工具方法 --------------------
 
+    async def _record_interaction(
+        self,
+        *,
+        task: StyleTask,
+        image_url: str,
+        prompt: str,
+        extra_prompt: str | None,
+        feedback: str | None,
+        options: dict,
+        status: str,
+        output_image_urls: list[str] | None = None,
+        provider_response: Any = None,
+        error_message: str | None = None,
+        duration_ms: int | None = None,
+    ) -> None:
+        """
+        记录一次与 AI 模型的交互（输入 + 输出），供审计与回溯。
+
+        本方法内部做了异常兜底：即便记录失败也不影响主流程（风格转换任务状态）。
+        """
+        try:
+            rec = ModelInteraction(
+                interaction_id=uuid.uuid4().hex,
+                task_id=task.task_id,
+                user_id=task.user_id,
+                skill_id=task.skill_id,
+                provider=task.provider,
+                input_image_url=image_url,
+                prompt_sent=prompt,
+                extra_prompt=extra_prompt,
+                feedback=feedback,
+                location=options.get("location"),
+                output_image_urls=json.dumps(output_image_urls or [], ensure_ascii=False),
+                output_count=len(output_image_urls or []),
+                provider_response=json.dumps(provider_response or {}, ensure_ascii=False, default=str),
+                status=status,
+                error_message=error_message,
+                duration_ms=duration_ms,
+            )
+            self.db.add(rec)
+            await self.db.flush()
+        except Exception as exc:
+            logger.warning("[交互记录] 写入失败（不影响主流程）: %s", exc)
+
     @staticmethod
     async def _download(url: str) -> tuple[bytes, str]:
-        """异步下载图片字节，返回 (字节流, content_type)"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(url)
+        """异步下载图片字节，返回 (字节流, content_type)，复用连接池。"""
+        client = _get_http_client()
+        resp = await client.get(url)
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "image/jpeg")
+        return resp.content, content_type
+
+    async def _background_persist_result(
+        self, user_id: str, result_id: str, provider_url: str,
+    ) -> None:
+        """
+        后台异步：下载 Provider 临时 URL 的结果图 → 上传到永久存储 → 生成缩略图 → 替换 DB 中的 URL。
+
+        使用独立 DB 会话，避免与主会话冲突。失败不影响用户已看到的结果（临时 URL 仍有 24h+ 有效期）。
+        """
+        try:
+            ext, content_type = await self._probe_content_type(provider_url)
+
+            # 上传原图到永久存储 ‖ 下载+生成缩略图（并行）
+            async def _upload_permanent() -> str:
+                return await self._fetch_and_store_result(
+                    user_id, provider_url, ext, content_type
+                )
+
+            async def _download_and_thumb() -> bytes | None:
+                try:
+                    data, _ = await self._download(provider_url)
+                    return await asyncio.to_thread(self.processor.generate_thumbnail, data)
+                except Exception as exc:
+                    logger.warning("[后台持久化] 缩略图生成失败: %s", exc)
+                    return None
+
+            perm_url, thumb_bytes = await asyncio.gather(
+                _upload_permanent(), _download_and_thumb()
+            )
+
+            # 上传缩略图
+            thumb_url = None
+            if thumb_bytes is not None:
+                thumb_url = await self._upload_result(
+                    user_id, thumb_bytes, "jpg", "image/jpeg", prefix="results/thumbnails"
+                )
+
+            # 用独立会话更新 DB
+            async with async_session_maker() as db:
+                from app.repositories.style_repo import StyleRepository
+                repo = StyleRepository(db)
+                await repo.update_result_urls(result_id, perm_url, thumb_url)
+                await db.commit()
+
+            logger.info(
+                "[后台持久化] 完成: result_id=%s, perm_url=%s, thumb_url=%s",
+                result_id, perm_url, thumb_url,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[后台持久化] 失败（临时 URL 仍可用）: result_id=%s, error=%s",
+                result_id, exc,
+            )
+
+    @staticmethod
+    async def _probe_content_type(url: str) -> tuple[str, str]:
+        """通过 HEAD 请求探测文件 content-type，避免下载完整文件。返回 (ext, content_type)。"""
+        client = _get_http_client()
+        try:
+            resp = await client.head(url)
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "image/jpeg")
-            return resp.content, content_type
+        except Exception:
+            content_type = "image/jpeg"
+        # 兼容带 charset 的情形
+        ct = content_type.split(";")[0].strip().lower()
+        ext_map = {
+            "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png",
+            "image/webp": "webp", "image/gif": "gif", "image/bmp": "bmp",
+        }
+        return ext_map.get(ct, "jpg"), content_type
+
+    def _fetch_and_store_result(
+        self, user_id: str, url: str, ext: str, content_type: str,
+    ) -> Any:
+        """通过 fetch_and_store 直接从远程 URL 存储结果图到对象存储（OSS 走服务端复制）"""
+        return asyncio.to_thread(self._do_fetch_and_store, user_id, url, ext, content_type)
+
+    def _do_fetch_and_store(
+        self, user_id: str, url: str, ext: str, content_type: str,
+    ) -> str:
+        """实际执行 fetch_and_store"""
+        from app.core.storage import get_storage_provider
+        storage = get_storage_provider()
+        date = datetime.utcnow().strftime("%Y%m%d")
+        key = f"results/{user_id}/{date}/{uuid.uuid4().hex}.{ext}"
+        return storage.fetch_and_store(url, key, content_type)
 
     def _upload_result(
         self,
@@ -648,6 +1070,74 @@ class StyleService:
         # 兼容带 charset 的情形
         ct = content_type.split(";")[0].strip().lower()
         return mapping.get(ct, "jpg")
+
+    async def _get_reference_images(self, skill_id: str) -> list[str]:
+        """
+        获取技能的参考图 URL 列表。
+
+        优先级：
+        1. 检查内存缓存
+        2. 读取 SKILL.md frontmatter 中的 reference_image_url（已上传到 MinIO 的 URL，零上传开销）
+        3. 回退：扫描本地 reference-* 文件 → 上传 MinIO → 缓存
+
+        无参考图的技能返回空列表。
+        """
+        # 1. 检查缓存
+        if skill_id in self._reference_image_cache:
+            return [self._reference_image_cache[skill_id]]
+
+        # 2. 优先读取 frontmatter 中的已上传 URL
+        try:
+            config = await self.skill_engine.load_skill_async(skill_id)
+            if config.reference_image_url:
+                url = config.reference_image_url.strip()
+                self._reference_image_cache[skill_id] = url
+                logger.info("[参考图] 使用 frontmatter URL: skill=%s, url=%s", skill_id, url)
+                return [url]
+        except Exception as exc:
+            logger.warning("[参考图] 加载 skill 配置失败: %s", exc)
+
+        # 3. 回退：扫描本地文件并上传
+        from app.core.skill_engine import SKILLS_DIR
+        skill_dir = os.path.join(SKILLS_DIR, skill_id)
+        if not os.path.isdir(skill_dir):
+            return []
+
+        ref_files: list[str] = []
+        for fname in sorted(os.listdir(skill_dir)):
+            if fname.startswith("reference-") and any(
+                fname.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")
+            ):
+                ref_files.append(os.path.join(skill_dir, fname))
+
+        if not ref_files:
+            return []
+
+        from app.core.storage import get_storage_provider
+        storage = get_storage_provider()
+
+        urls: list[str] = []
+        for fpath in ref_files:
+            ext = os.path.splitext(fpath)[1].lstrip(".")
+            content_type = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+
+            def _upload(path: str = fpath, e: str = ext, ct: str = content_type) -> str:
+                with open(path, "rb") as f:
+                    data = f.read()
+                key = f"skill-refs/{skill_id}/{os.path.basename(path)}"
+                return storage.upload(key, data, ct)
+
+            try:
+                url = await asyncio.to_thread(_upload)
+                urls.append(url)
+                logger.info("[参考图] 上传成功: %s -> %s", fpath, url)
+            except Exception as exc:
+                logger.warning("[参考图] 上传失败: %s -> %s", fpath, exc)
+
+        if urls:
+            self._reference_image_cache[skill_id] = urls[0]
+
+        return urls
 
 
 # ============================================================

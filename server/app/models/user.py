@@ -31,6 +31,10 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="头像URL")
     # 积分余额（用于风格转换扣费）
     credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="积分余额")
+    # 邀请码（唯一，用于邀请好友注册）
+    referral_code: Mapped[str | None] = mapped_column(String(16), unique=True, index=True, nullable=True, comment="邀请码")
+    # 邀请人ID（记录是谁邀请注册的）
+    inviter_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True, comment="邀请人ID")
     # 今日已使用次数（用于每日免费额度限流）
     usage_today: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="今日使用次数")
     # 每日使用上限
@@ -39,6 +43,11 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, comment="账号状态")
     # 是否为管理员（用于后台配置功能权限控制）
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="是否管理员")
+    # 权限码集合（JSON 数组字符串），如 ["home:access","history:view"]
+    # 超级管理员(is_admin=True)隐式拥有全部权限；仅管理员可分配
+    permissions: Mapped[str | None] = mapped_column(
+        String(1024), nullable=True, default="[]", comment="权限码集合(JSON数组)"
+    )
     # 创建时间
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False, comment="创建时间")
     # 更新时间

@@ -34,6 +34,7 @@ class MinIOProvider(StorageProvider):
         )
         self._bucket = settings.minio.bucket
         self._public_base_url = settings.minio.public_base_url.rstrip("/")
+        self._bucket_ensured = False  # 首次上传时检查/创建 bucket
 
     def _ensure_bucket(self) -> None:
         """
@@ -41,7 +42,12 @@ class MinIOProvider(StorageProvider):
 
         对于权限受限的 IAM 用户，bucket_exists() 可能抛出 AccessDenied，
         此时跳过检查，直接尝试上传（put_object 会自动创建桶或直接成功）。
+
+        每个 provider 实例只执行一次（provider 为单例）。
         """
+        if self._bucket_ensured:
+            return
+        self._bucket_ensured = True
         try:
             if not self._client.bucket_exists(self._bucket):
                 self._client.make_bucket(self._bucket)

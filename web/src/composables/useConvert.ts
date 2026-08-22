@@ -16,6 +16,9 @@ const SKILL_NAME_MAP: Record<string, string> = {
   'city-editorial': '城市风景海报',
   'photo-abstract-editorial': '照片抽象编辑',
   'fridge-magnet': '旅行冰箱贴',
+  'ink-minimalist': '水墨扁平重构插画',
+  'marker-child-doodle': '马克笔童画',
+  'scenes-gathered-zine': '实景拼贴',
 }
 
 /** 获取技能中文名称 */
@@ -55,6 +58,10 @@ export function useConvert() {
       if (styleStore.selectedSkillId === 'fridge-magnet') {
         params.location = styleStore.fridgeLocation.trim()
       }
+      // 马克笔童画技能需要签名文字
+      if (styleStore.selectedSkillId === 'marker-child-doodle') {
+        params.signature = styleStore.markerSignature.trim() || 'Utopian'
+      }
       const result = await analyzeApi(params)
       styleStore.setAnalysisResult(result)
       // 分析完成后，如果用户未手动选择技能，则自动选中推荐的技能
@@ -83,12 +90,6 @@ export function useConvert() {
       styleStore.selectedSkillId,
       styleStore.analysisResult,
     )
-    // 冰箱贴为固定模板风格，无需预先分析图片，由后端按技能模板 + 拍摄地点权威生成；
-    // 其余风格必须先「分析图片」生成提示词后才能转换。
-    if (skillId !== 'fridge-magnet' && !styleStore.analysisResult) {
-      ElMessage.warning('请先分析图片')
-      return null
-    }
     // 冰箱贴必须填写拍摄地点
     if (skillId === 'fridge-magnet' && !styleStore.fridgeLocation.trim()) {
       ElMessage.warning('请填写拍摄地点')
@@ -108,6 +109,10 @@ export function useConvert() {
       // 冰箱贴技能：把拍摄地点也带给后台，作为权威重生成提示词的依据
       if (skillId === 'fridge-magnet') {
         params.location = styleStore.fridgeLocation.trim()
+      }
+      // 马克笔童画技能：把签名文字也带给后台
+      if (skillId === 'marker-child-doodle') {
+        params.signature = styleStore.markerSignature.trim() || 'Utopian'
       }
       const task = await convertApi(params)
       taskStore.setTask(task)

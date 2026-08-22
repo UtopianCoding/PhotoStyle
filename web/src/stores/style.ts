@@ -14,6 +14,8 @@ export const useStyleStore = defineStore('style', () => {
   const extraPrompt = ref<string>('')
   // 冰箱贴技能的拍摄地点（如「昆明/中国」），由后端翻译为英文城市名
   const fridgeLocation = ref<string>('')
+  // 马克笔童画的签名文字（默认 Utopian）
+  const markerSignature = ref<string>('')
   // 转换选项
   const options = ref<Record<string, unknown>>({})
   // 图片分析结果
@@ -58,6 +60,11 @@ export const useStyleStore = defineStore('style', () => {
     fridgeLocation.value = loc
   }
 
+  /** 设置马克笔童画签名 */
+  function setMarkerSignature(sig: string) {
+    markerSignature.value = sig
+  }
+
   /** 设置转换选项 */
   function setOptions(opts: Record<string, unknown>) {
     options.value = opts
@@ -81,6 +88,7 @@ export const useStyleStore = defineStore('style', () => {
     selectedProvider.value = ''
     extraPrompt.value = ''
     fridgeLocation.value = ''
+    markerSignature.value = ''
     options.value = {}
     analysisResult.value = null
     selectedPoeticText.value = ''
@@ -93,6 +101,7 @@ export const useStyleStore = defineStore('style', () => {
     selectedProvider,
     extraPrompt,
     fridgeLocation,
+    markerSignature,
     options,
     analysisResult,
     selectedPoeticText,
@@ -103,6 +112,7 @@ export const useStyleStore = defineStore('style', () => {
     setProvider,
     setExtraPrompt,
     setFridgeLocation,
+    setMarkerSignature,
     setOptions,
     setAnalysisResult,
     setPoeticText,

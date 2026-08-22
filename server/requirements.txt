@@ -18,8 +18,8 @@ aioredis==2.0.1
 minio==7.2.3
 oss2==2.18.4
 
-# 图像处理
-Pillow==10.2.0
+# 图像处理（使用 >= 确保能安装预编译 wheel，避免源码编译）
+Pillow>=10.2.0
 
 # 支付
 python-alipay-sdk==3.4.0

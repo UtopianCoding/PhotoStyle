@@ -25,14 +25,14 @@ services:
       - "7823:7823"
 
   # ---------- 前端 + Nginx ----------
-  web:
-    build: ./web
-    container_name: photostyle-web
-    restart: always
-    depends_on:
-      - backend
-    ports:
-      - "7821:80"
+#  web:
+#    build: ./web
+#    container_name: photostyle-web
+#    restart: always
+#    depends_on:
+#      - backend
+#    ports:
+#      - "7821:80"
 
   # ====================================================================
   # 方式 B：全量容器化（取消注释即可使用）

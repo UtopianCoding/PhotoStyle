@@ -1,16 +1,16 @@
 """
 后台配置管理服务
 
-提供系统配置的读取（脱敏）与更新（写入 .env 文件）。
-
-模型配置按 provider 分组（dashscope / openai / minimax），存储配置按 storage_type 分组（minio / oss）。
-生效方式：写入 .env 后，需重启后端服务才能让新配置生效（不做内存热更新，更安全）。
+提供系统配置的读取（脱敏）与更新。
+- 模型配置：持久化到数据库 + 内存缓存，运行时修改立即生效，无需重启
+- 存储/应用配置：写入 .env 文件，需重启后端服务生效
 """
 
 import logging
 from pathlib import Path
 
 from dotenv import set_key
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.permissions import (
     PERMISSION_CATALOG,
@@ -29,12 +29,14 @@ from app.schemas.admin import (
     StorageConfig,
     SystemConfigRead,
     SystemConfigUpdate,
+    VolcengineConfigRead,
 )
 from app.schemas.user import (
     PermissionCatalog,
     PermissionItem,
     RolePreset,
 )
+from app.services.model_config_store import model_config_store
 
 logger = logging.getLogger(__name__)
 
@@ -66,41 +68,79 @@ def _should_skip_secret(value: str | None) -> bool:
     return _MASK_TOKEN in value
 
 
+def _sanitize_url(value: str | None) -> str | None:
+    """清洗 URL：去除反引号、多余空白、尾部重复路径"""
+    if not value:
+        return value
+    # 去除反引号和首尾空白
+    cleaned = value.strip().strip("`").strip()
+    # 去除尾部多余的斜杠
+    cleaned = cleaned.rstrip("/")
+    return cleaned
+
+
+def _sanitize_config(config: dict) -> dict:
+    """清洗配置字典中的 URL 和字符串字段"""
+    for key in ("base_url", "model_image", "workspace_id", "region", "model_vision"):
+        if key in config and isinstance(config[key], str):
+            if key == "base_url":
+                config[key] = _sanitize_url(config[key])
+            else:
+                config[key] = config[key].strip()
+    return config
+
+
 class AdminService:
     """后台配置管理服务"""
+
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        self.db = db
 
     # -------------------- 读取 --------------------
 
     def get_config(self) -> SystemConfigRead:
-        """从 settings 单例读取当前配置，敏感字段脱敏后返回"""
+        """从缓存（模型配置）+ settings（存储/应用配置）构造脱敏只读视图"""
         from app.config import settings
 
         return self._build_read_view(settings)
 
     @staticmethod
     def _build_read_view(settings) -> SystemConfigRead:
-        """根据 settings 构造脱敏只读视图"""
+        """根据缓存 + settings 构造脱敏只读视图"""
+        # 模型配置从内存缓存读取（DB 持久化，运行时可热更新）
+        store = model_config_store
+        qw = store.get_config("qianwen") or {}
+        dl = store.get_config("dalle") or {}
+        mm = store.get_config("minimax") or {}
+        vc = store.get_config("volcengine") or {}
+
         return SystemConfigRead(
             model=ModelConfig(
-                default_provider=settings.model.default_provider,
+                default_provider=store.get_default_provider(),
                 qianwen=DashScopeConfigRead(
-                    api_key=mask_secret(settings.dashscope.api_key.get_secret_value()),
-                    model_vision=settings.dashscope.model_vision,
-                    model_image=settings.dashscope.model_image,
-                    workspace_id=settings.dashscope.workspace_id,
-                    region=settings.dashscope.region,
+                    api_key=mask_secret(qw.get("api_key", "")),
+                    model_vision=qw.get("model_vision", ""),
+                    model_image=qw.get("model_image", ""),
+                    workspace_id=qw.get("workspace_id", ""),
+                    region=qw.get("region", ""),
                 ),
                 dalle=OpenAIConfigRead(
-                    api_key=mask_secret(settings.dalle.api_key.get_secret_value()),
-                    base_url=settings.dalle.base_url,
-                    model_image=settings.dalle.model_image,
+                    api_key=mask_secret(dl.get("api_key", "")),
+                    base_url=dl.get("base_url", ""),
+                    model_image=dl.get("model_image", ""),
                 ),
                 minimax=MinimaxConfigRead(
-                    api_key=mask_secret(settings.minimax.api_key.get_secret_value()),
-                    base_url=settings.minimax.base_url,
-                    model_image=settings.minimax.model_image,
+                    api_key=mask_secret(mm.get("api_key", "")),
+                    base_url=mm.get("base_url", ""),
+                    model_image=mm.get("model_image", ""),
+                ),
+                volcengine=VolcengineConfigRead(
+                    api_key=mask_secret(vc.get("api_key", "")),
+                    base_url=vc.get("base_url", ""),
+                    model_image=vc.get("model_image", ""),
                 ),
             ),
+            # 存储 / 应用配置仍从 settings（.env）读取
             storage=StorageConfig(
                 storage_type=settings.storage.type,
                 minio=MinIOConfigRead(
@@ -121,28 +161,25 @@ class AdminService:
             app=AppConfigRead(
                 log_level=settings.logging.level,
                 cors_allowed_origins=settings.cors.allowed_origins_list,
-                rate_limit_free_user_daily_limit=settings.rate_limit.free_user_daily_limit,
+                rate_limit_credit_cost_per_convert=settings.rate_limit.credit_cost_per_convert,
                 access_token_expire_minutes=settings.jwt.access_token_expire_minutes,
             ),
         )
 
     # -------------------- 更新 --------------------
 
-    def update_config(self, data: SystemConfigUpdate) -> SystemConfigRead:
+    async def update_config(self, data: SystemConfigUpdate) -> SystemConfigRead:
         """
-        将更新写入 .env 文件。
-
-        - 敏感字段（API Key / Secret）若仍为脱敏形态则跳过，避免覆盖为脏值
-        - 列表类型字段（CORS 来源）以英文逗号拼接
-        - 布尔类型字段（MINIO_SECURE）转为 'true' / 'false'
-        - 写入后重新读取 settings（单例不重建，仅返回最新 .env 内容的脱敏视图）
-
-        注意：内存中的 settings 单例不会自动更新，需重启后端服务生效。
+        更新系统配置：
+        - 模型配置写入 DB + 刷新内存缓存，立即生效无需重启
+        - 存储/应用配置仍写入 .env，需重启后端服务生效
         """
+        from app.config import settings
+
         env_path = str(ENV_PATH)
 
         if data.model is not None:
-            self._write_model(env_path, data.model)
+            await self._write_model(data.model)
 
         if data.storage is not None:
             self._write_storage(env_path, data.storage)
@@ -150,55 +187,78 @@ class AdminService:
         if data.app is not None:
             self._write_app(env_path, data.app)
 
-        logger.info("管理员已更新系统配置，需重启后端服务使新配置生效")
+        logger.info("管理员已更新系统配置")
 
-        # 重新读取（基于最新 .env 文件构造新 Settings，避免返回脏数据）
+        # 模型配置已从缓存生效，存储/应用配置基于最新 .env 构造
         from app.config import Settings
 
         fresh = Settings()
         return self._build_read_view(fresh)
 
-    # -------------------- 写入分组 --------------------
+    # -------------------- 模型配置写入 DB --------------------
 
     @staticmethod
-    def _write_model(env_path: str, model) -> None:
+    async def _write_model(model) -> None:
+        """将模型配置写入 DB 并刷新内存缓存"""
+        store = model_config_store
+
         # 默认 provider
         if model.default_provider is not None:
-            set_key(env_path, "MODEL_DEFAULT_PROVIDER", model.default_provider)
+            await store.save_default_provider(model.default_provider)
 
         # 千问 / DashScope
         if model.qianwen is not None:
             d = model.qianwen
+            current = dict(store.get_config("qianwen") or {})
             if not _should_skip_secret(d.api_key):
-                set_key(env_path, "DASHSCOPE_API_KEY", d.api_key)
+                current["api_key"] = d.api_key
             if d.model_vision is not None:
-                set_key(env_path, "DASHSCOPE_MODEL_VISION", d.model_vision)
+                current["model_vision"] = d.model_vision
             if d.model_image is not None:
-                set_key(env_path, "DASHSCOPE_MODEL_IMAGE", d.model_image)
+                current["model_image"] = d.model_image
             if d.workspace_id is not None:
-                set_key(env_path, "DASHSCOPE_WORKSPACE_ID", d.workspace_id)
+                current["workspace_id"] = d.workspace_id
             if d.region is not None:
-                set_key(env_path, "DASHSCOPE_REGION", d.region)
+                current["region"] = d.region
+            await store.save_provider_config("qianwen", _sanitize_config(current))
 
         # OpenAI / DALL-E
         if model.dalle is not None:
             o = model.dalle
+            current = dict(store.get_config("dalle") or {})
             if not _should_skip_secret(o.api_key):
-                set_key(env_path, "DALLE_API_KEY", o.api_key)
+                current["api_key"] = o.api_key
             if o.base_url is not None:
-                set_key(env_path, "DALLE_BASE_URL", o.base_url)
+                current["base_url"] = o.base_url
             if o.model_image is not None:
-                set_key(env_path, "DALLE_MODEL_IMAGE", o.model_image)
+                current["model_image"] = o.model_image
+            await store.save_provider_config("dalle", _sanitize_config(current))
 
         # MiniMax
         if model.minimax is not None:
             m = model.minimax
+            current = dict(store.get_config("minimax") or {})
             if not _should_skip_secret(m.api_key):
-                set_key(env_path, "MINIMAX_API_KEY", m.api_key)
+                current["api_key"] = m.api_key
             if m.base_url is not None:
-                set_key(env_path, "MINIMAX_BASE_URL", m.base_url)
+                current["base_url"] = m.base_url
             if m.model_image is not None:
-                set_key(env_path, "MINIMAX_MODEL_IMAGE", m.model_image)
+                current["model_image"] = m.model_image
+            await store.save_provider_config("minimax", _sanitize_config(current))
+
+        # 火山引擎（Seedream）
+        if model.volcengine is not None:
+            v = model.volcengine
+            current = dict(store.get_config("volcengine") or {})
+            if not _should_skip_secret(v.api_key):
+                current["api_key"] = v.api_key
+            if v.base_url is not None:
+                current["base_url"] = v.base_url
+            if v.model_image is not None:
+                current["model_image"] = v.model_image
+            await store.save_provider_config("volcengine", _sanitize_config(current))
+
+    # -------------------- 存储/应用配置写入 .env --------------------
 
     @staticmethod
     def _write_storage(env_path: str, storage) -> None:
@@ -239,8 +299,8 @@ class AdminService:
             set_key(env_path, "LOG_LEVEL", app.log_level)
         if app.cors_allowed_origins is not None:
             set_key(env_path, "CORS_ALLOWED_ORIGINS", ",".join(app.cors_allowed_origins))
-        if app.rate_limit_free_user_daily_limit is not None:
-            set_key(env_path, "RATE_LIMIT_FREE_USER_DAILY_LIMIT", str(app.rate_limit_free_user_daily_limit))
+        if app.rate_limit_credit_cost_per_convert is not None:
+            set_key(env_path, "RATE_LIMIT_CREDIT_COST_PER_CONVERT", str(app.rate_limit_credit_cost_per_convert))
         if app.access_token_expire_minutes is not None:
             set_key(env_path, "ACCESS_TOKEN_EXPIRE_MINUTES", str(app.access_token_expire_minutes))
 

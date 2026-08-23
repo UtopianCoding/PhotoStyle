@@ -18,6 +18,7 @@ from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
 from app.services.credit_service import CreditService
 from app.services.email_service import EmailService
+from app.services.feedback_service import FeedbackService
 from app.services.history_service import HistoryService
 from app.services.image_service import ImageService
 from app.services.style_service import StyleService
@@ -102,9 +103,9 @@ async def get_history_service(db: DBSession) -> HistoryService:
     return HistoryService(db)
 
 
-async def get_admin_service() -> AdminService:
-    """管理员配置服务依赖（无状态，无需 DB 会话）"""
-    return AdminService()
+async def get_admin_service(db: DBSession) -> AdminService:
+    """管理员配置服务依赖"""
+    return AdminService(db)
 
 
 async def get_conversation_repo(db: DBSession) -> ConversationRepository:
@@ -122,6 +123,11 @@ async def get_credit_service(db: DBSession) -> CreditService:
     return CreditService(db)
 
 
+async def get_feedback_service(db: DBSession) -> FeedbackService:
+    """反馈服务依赖"""
+    return FeedbackService(db)
+
+
 # 服务依赖类型别名
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 ImageServiceDep = Annotated[ImageService, Depends(get_image_service)]
@@ -131,3 +137,4 @@ AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 ConversationRepoDep = Annotated[ConversationRepository, Depends(get_conversation_repo)]
 EmailServiceDep = Annotated[EmailService, Depends(get_email_service)]
 CreditServiceDep = Annotated[CreditService, Depends(get_credit_service)]
+FeedbackServiceDep = Annotated[FeedbackService, Depends(get_feedback_service)]

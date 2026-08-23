@@ -259,14 +259,24 @@ export interface MinimaxConfig {
 }
 
 /**
+ * 火山引擎（Seedream）配置（敏感字段脱敏）
+ */
+export interface VolcengineConfig {
+  apiKey: string
+  baseUrl: string
+  modelImage: string
+}
+
+/**
  * 模型配置（聚合多 provider + 默认路由）
  */
 export interface ModelConfig {
-  /** 默认图像生成 Provider ID：qianwen / dalle / minimax */
+  /** 默认图像生成 Provider ID：qianwen / dalle / minimax / volcengine */
   defaultProvider: string
   qianwen: DashScopeConfig
   dalle: OpenAIConfig
   minimax: MinimaxConfig
+  volcengine: VolcengineConfig
 }
 
 /**
@@ -307,7 +317,7 @@ export interface StorageConfig {
 export interface AppConfigRead {
   logLevel: string
   corsAllowedOrigins: string[]
-  rateLimitFreeUserDailyLimit: number
+  rateLimitCreditCostPerConvert: number
   accessTokenExpireMinutes: number
 }
 
@@ -343,6 +353,11 @@ export interface SystemConfigUpdate {
       baseUrl?: string
       modelImage?: string
     }
+    volcengine?: {
+      apiKey?: string
+      baseUrl?: string
+      modelImage?: string
+    }
   }
   storage?: {
     storageType?: string
@@ -364,7 +379,7 @@ export interface SystemConfigUpdate {
   app?: {
     logLevel?: string
     corsAllowedOrigins?: string[]
-    rateLimitFreeUserDailyLimit?: number
+    rateLimitCreditCostPerConvert?: number
     accessTokenExpireMinutes?: number
   }
 }
@@ -502,4 +517,74 @@ export interface InviteInfoResponse {
   totalRewards: number
   inviteLink: string
   rewardPerInvite: number
+}
+
+// ============================================================
+// 反馈与建议
+// ============================================================
+
+/**
+ * 反馈状态
+ */
+export type FeedbackStatus = 'pending' | 'replied' | 'resolved' | 'closed'
+
+/**
+ * 创建反馈请求
+ */
+export interface FeedbackCreate {
+  /** 反馈内容（必填，1-2000字符） */
+  content: string
+  /** 附件图片URL列表（可选，最多5张） */
+  images?: string[]
+}
+
+/**
+ * 反馈信息（用户视角）
+ */
+export interface FeedbackInfo {
+  feedbackId: string
+  userId: string
+  content: string
+  images: string[] | null
+  status: FeedbackStatus
+  adminReply: string | null
+  repliedBy: string | null
+  repliedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * 管理员回复请求
+ */
+export interface FeedbackReply {
+  /** 回复内容（必填，1-5000字符） */
+  reply: string
+}
+
+/**
+ * 更新反馈状态请求
+ */
+export interface FeedbackStatusUpdate {
+  /** 新状态 */
+  status: FeedbackStatus
+}
+
+/**
+ * 反馈信息（管理员视角，包含用户信息）
+ */
+export interface AdminFeedbackItem {
+  feedbackId: string
+  userId: string
+  userEmail: string
+  userNickname: string | null
+  userAvatarUrl: string | null
+  content: string
+  images: string[] | null
+  status: FeedbackStatus
+  adminReply: string | null
+  repliedBy: string | null
+  repliedAt: string | null
+  createdAt: string
+  updatedAt: string
 }

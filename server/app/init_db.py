@@ -375,3 +375,51 @@ async def ensure_payment_records_table() -> None:
     """确保 payment_records 表存在（幂等）"""
     async with engine.begin() as conn:
         await conn.execute(text(_CREATE_PAYMENT_RECORDS))
+
+
+# Provider 配置表建表语句
+_CREATE_PROVIDER_CONFIGS = """
+CREATE TABLE IF NOT EXISTS `provider_configs` (
+  `id`            INT          NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `provider_id`   VARCHAR(32)  NOT NULL                COMMENT 'Provider唯一标识',
+  `config_json`   TEXT         NOT NULL                COMMENT '配置内容(JSON)',
+  `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_provider_id` (`provider_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Provider配置表';
+"""
+
+
+async def ensure_provider_configs_table() -> None:
+    """确保 provider_configs 表存在（幂等）"""
+    async with engine.begin() as conn:
+        await conn.execute(text(_CREATE_PROVIDER_CONFIGS))
+
+
+# 用户反馈与建议表建表语句（与 migrations/015_add_feedbacks.sql 保持一致）
+_CREATE_FEEDBACKS = """
+CREATE TABLE IF NOT EXISTS `feedbacks` (
+  `id`            INT            NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `feedback_id`   VARCHAR(64)    NOT NULL                COMMENT '反馈ID',
+  `user_id`       VARCHAR(64)    NOT NULL                COMMENT '用户ID',
+  `content`       TEXT           NOT NULL                COMMENT '反馈内容',
+  `images`        TEXT           NULL                    COMMENT '反馈附图(JSON数组)',
+  `status`        VARCHAR(32)    NOT NULL DEFAULT 'pending' COMMENT '反馈状态',
+  `admin_reply`   TEXT           NULL                    COMMENT '管理员回复',
+  `replied_by`    VARCHAR(64)    NULL                    COMMENT '回复人ID',
+  `replied_at`    DATETIME       NULL                    COMMENT '回复时间',
+  `created_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_feedback_id` (`feedback_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户反馈与建议表';
+"""
+
+
+async def ensure_feedbacks_table() -> None:
+    """确保 feedbacks 表存在（幂等）"""
+    async with engine.begin() as conn:
+        await conn.execute(text(_CREATE_FEEDBACKS))

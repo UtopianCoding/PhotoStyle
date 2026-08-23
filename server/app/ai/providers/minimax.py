@@ -9,7 +9,7 @@ from typing import NoReturn
 
 from app.ai.providers.base import ImageProvider
 from app.ai.schemas import ImageProviderRequest, ImageProviderResponse
-from app.config import settings
+from app.services.model_config_store import model_config_store
 
 
 class MinimaxProvider(ImageProvider):
@@ -19,8 +19,8 @@ class MinimaxProvider(ImageProvider):
         return "minimax"
 
     def is_available(self) -> bool:
-        # 只要配置了 API Key 即视为可用
-        return bool(settings.minimax.api_key.get_secret_value())
+        cfg = model_config_store.get_config("minimax") or {}
+        return bool(cfg.get("api_key"))
 
     async def generate_image(self, request: ImageProviderRequest) -> NoReturn:
         # 接口未实现，统一抛出异常

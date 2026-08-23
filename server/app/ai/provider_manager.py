@@ -14,6 +14,7 @@ from app.ai.providers.dalle import DalleProvider
 from app.ai.providers.doubao import DoubaoProvider
 from app.ai.providers.minimax import MinimaxProvider
 from app.ai.providers.qianwen import QianwenProvider
+from app.ai.providers.volcengine import VolcengineProvider
 from app.ai.schemas import ImageProviderRequest, ImageProviderResponse
 from app.core.exceptions import AIServiceException
 
@@ -32,7 +33,7 @@ class ProviderManager:
         # 注册默认 Provider
         defaults: list[ImageProvider] = list(providers or [])
         if not defaults:
-            defaults = [QianwenProvider(), DoubaoProvider(), DalleProvider(), MinimaxProvider()]
+            defaults = [QianwenProvider(), DoubaoProvider(), DalleProvider(), MinimaxProvider(), VolcengineProvider()]
 
         for p in defaults:
             self.register(p, append_fallback=True)
@@ -82,6 +83,10 @@ class ProviderManager:
         """
         # 构造尝试顺序：优先 Provider 在前，其后跟回退链
         order: list[str] = []
+        # 若未指定 preferred，使用管理后台配置的默认 Provider
+        if not preferred:
+            from app.services.model_config_store import model_config_store
+            preferred = model_config_store.get_default_provider()
         if preferred and preferred in self._providers:
             order.append(preferred)
         for pid in self._fallback_chain:

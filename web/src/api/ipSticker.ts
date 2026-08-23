@@ -17,3 +17,11 @@ export async function getSessionDetail(sessionId: string) {
     method: 'get',
   })
 }
+
+/** 删除会话 */
+export async function deleteIPSession(sessionId: string) {
+  return request<null>({
+    url: `/ip-sticker/sessions/${sessionId}`,
+    method: 'delete',
+  })
+}

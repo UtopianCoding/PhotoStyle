@@ -172,6 +172,28 @@ class MinimaxConfig(BaseSettings):
 
 
 # ============================================================
+# 火山引擎（Seedream 图像生成）配置
+# ============================================================
+class VolcengineConfig(BaseSettings):
+    """火山引擎 Seedream 图像生成配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="VOLCENGINE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        protected_namespaces=(),
+    )
+
+    # 火山引擎 API Key（敏感信息，在方舟平台获取）
+    api_key: SecretStr = SecretStr("")
+    # 接口基础地址
+    base_url: str = "https://ark.cn-beijing.volces.com/api/plan/v3"
+    # 图像生成模型名（如 seedream-5-0-pro / seedream-5-0-lite / seedream-4-5 / seedream-4-0）
+    model_image: str = "seedream-5-0-pro"
+
+
+# ============================================================
 # 模型路由配置
 # ============================================================
 class ModelRoutingConfig(BaseSettings):
@@ -184,7 +206,7 @@ class ModelRoutingConfig(BaseSettings):
         extra="ignore",
     )
 
-    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao
+    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao / volcengine
     default_provider: str = "qianwen"
 
 
@@ -363,8 +385,8 @@ class RateLimitConfig(BaseSettings):
         extra="ignore",
     )
 
-    # 免费用户每日风格转换次数上限
-    free_user_daily_limit: int = 10
+    # 每次转换扣除的积分数
+    credit_cost_per_convert: int = 4
 
 
 # ============================================================
@@ -427,6 +449,8 @@ class Settings(BaseSettings):
     dalle: DalleConfig = DalleConfig()
     # MiniMax 配置
     minimax: MinimaxConfig = MinimaxConfig()
+    # 火山引擎（Seedream）配置
+    volcengine: VolcengineConfig = VolcengineConfig()
     # 模型路由配置
     model: ModelRoutingConfig = ModelRoutingConfig()
     # 存储类型配置

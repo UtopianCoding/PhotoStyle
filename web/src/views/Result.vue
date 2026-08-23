@@ -72,6 +72,16 @@ const isDone = computed(() => task.value?.status === 'success')
 const isFailed = computed(
   () => task.value?.status === 'failed' || task.value?.status === 'canceled',
 )
+// 当前阶段文案映射
+const STAGE_LABEL: Record<string, string> = {
+  analyzing: '正在分析图片内容…',
+  generating: 'AI 正在绘制中…',
+  uploading: '正在上传结果…',
+}
+const stageLabel = computed(() => {
+  const stage = task.value?.stage ?? ''
+  return STAGE_LABEL[stage] || '正在准备中…'
+})
 // 原图地址（从任务状态接口读取，不依赖首页上传态）
 const originalUrl = computed(() => task.value?.originalUrl ?? '')
 // 结果图地址（取第一个结果）
@@ -203,14 +213,33 @@ function goBack() {
       <span class="result-topbar__task font-mono-label">任务 #{{ taskId }}</span>
     </div>
 
-    <!-- 进行中：朱砂进度条 -->
+    <!-- 进行中：动画 + 朱砂进度条 -->
     <div v-if="!isDone && !isFailed" class="progress-card">
+      <!-- 动画区域 -->
+      <div class="progress-anim">
+        <!-- 水墨圆环动画 -->
+        <div class="ink-ring">
+          <svg viewBox="0 0 120 120" class="ink-ring__svg">
+            <circle cx="60" cy="60" r="50" class="ink-ring__track" />
+            <circle cx="60" cy="60" r="50" class="ink-ring__fill" />
+          </svg>
+          <span class="ink-ring__seal font-display">绘</span>
+        </div>
+        <!-- 漂浮墨点 -->
+        <span class="ink-dot ink-dot--1"></span>
+        <span class="ink-dot ink-dot--2"></span>
+        <span class="ink-dot ink-dot--3"></span>
+        <span class="ink-dot ink-dot--4"></span>
+        <span class="ink-dot ink-dot--5"></span>
+      </div>
       <el-progress
         :percentage="task?.progress ?? 0"
         :status="task?.status === 'running' ? undefined : 'warning'"
         :stroke-width="6"
+        class="progress-card__bar"
       />
-      <p class="progress-card__hint">正在生成，请稍候…</p>
+      <p class="progress-card__stage">{{ stageLabel }}</p>
+      <p class="progress-card__hint">预计需要 30~60 秒，请耐心等待</p>
     </div>
 
     <!-- 失败 / 取消 -->
@@ -427,22 +456,153 @@ function goBack() {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 56px 24px;
+  padding: 48px 24px 40px;
   text-align: center;
 }
+.progress-card__bar {
+  max-width: 360px;
+  margin: 0 auto;
+}
+.progress-card__stage {
+  margin-top: 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: 0.06em;
+  animation: stage-pulse 2.4s ease-in-out infinite;
+}
 .progress-card__hint {
-  margin-top: 18px;
-  font-size: 14px;
+  margin-top: 8px;
+  font-size: 13px;
   color: var(--color-text-secondary);
   letter-spacing: 0.04em;
 }
 
-/* 纸面相框：温暖边框 + 极淡内衬，托住两列对比 */
+/* ====== 转换动画区域 ====== */
+.progress-anim {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 140px;
+  height: 140px;
+  margin: 0 auto 28px;
+}
+
+/* 水墨旋转环 */
+.ink-ring {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ink-ring__svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  animation: ring-rotate 3s linear infinite;
+}
+.ink-ring__track {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 3;
+}
+.ink-ring__fill {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 314;
+  stroke-dashoffset: 80;
+  animation: ring-dash 2s ease-in-out infinite alternate;
+}
+
+/* 中心朱印章 */
+.ink-ring__seal {
+  position: relative;
+  z-index: 1;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 52px;
+  text-align: center;
+  box-shadow: var(--shadow-seal);
+  animation: seal-breathe 2.8s ease-in-out infinite;
+}
+.ink-ring__seal::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+}
+
+/* 漂浮墨点 */
+.ink-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0;
+  animation: dot-float 3s ease-in-out infinite;
+}
+.ink-dot--1 { width: 6px; height: 6px; top: 8px; left: 20px; animation-delay: 0s; }
+.ink-dot--2 { width: 4px; height: 4px; top: 20px; right: 12px; animation-delay: 0.6s; }
+.ink-dot--3 { width: 5px; height: 5px; bottom: 16px; left: 10px; animation-delay: 1.2s; }
+.ink-dot--4 { width: 3px; height: 3px; bottom: 8px; right: 24px; animation-delay: 1.8s; }
+.ink-dot--5 { width: 5px; height: 5px; top: 50%; left: 4px; animation-delay: 2.4s; }
+
+/* ====== 动画关键帧 ====== */
+@keyframes ring-rotate {
+  to { transform: rotate(270deg); }
+}
+@keyframes ring-dash {
+  0%   { stroke-dashoffset: 240; }
+  100% { stroke-dashoffset: 40; }
+}
+@keyframes seal-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.08); opacity: 0.88; }
+}
+@keyframes dot-float {
+  0%        { opacity: 0; transform: scale(0.5) translateY(0); }
+  30%       { opacity: 0.6; }
+  70%       { opacity: 0.4; }
+  100%      { opacity: 0; transform: scale(1.2) translateY(-18px); }
+}
+@keyframes stage-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* 纸面相框：温暖边框 + 极淡内衬 + 纸张纹理 */
 .paper-frame {
+  position: relative;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 24px;
+  overflow: hidden;
+  animation: card-fade-in 0.5s ease-out;
+}
+.paper-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
 }
 
 /* 两列对比布局：原图 / 效果图 */
@@ -673,6 +833,18 @@ function goBack() {
   }
   .result-topbar__task {
     font-size: 11px;
+  }
+}
+
+/* 卡片入场动画 */
+@keyframes card-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

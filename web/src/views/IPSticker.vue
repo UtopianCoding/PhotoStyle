@@ -1,7 +1,7 @@
 <!-- IP 表情包制作页：左侧会话列表 + 右侧聊天区 -->
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { ElMessage, ElImageViewer } from 'element-plus'
+import { ElMessage, ElImageViewer, ElMessageBox } from 'element-plus'
 import {
   Picture as PictureIcon,
   Check,
@@ -12,12 +12,13 @@ import {
   Connection,
   Plus,
   ChatDotRound,
+  Delete,
 } from '@element-plus/icons-vue'
 import { useIPStickerChat } from '@/composables/useIPStickerChat'
 import { useImageStore } from '@/stores/image'
 import { useUserStore } from '@/stores/user'
 import { uploadImage } from '@/api/image'
-import { listIPSessions } from '@/api/ipSticker'
+import { listIPSessions, deleteIPSession } from '@/api/ipSticker'
 import type { ChatImage, ChatAction, SessionItem } from '@/types/ipSticker'
 
 const chat = useIPStickerChat()
@@ -95,12 +96,33 @@ function formatTime(dateStr: string): string {
 
 // 切换会话
 function selectSession(s: SessionItem) {
-  chat.switchSession(s.sessionId)
+  chat.switchSession(s.session_id)
 }
 
 // 新建对话
 function handleNewSession() {
   chat.newSession()
+}
+
+// 删除对话
+async function handleDeleteSession(e: Event, s: SessionItem) {
+  e.stopPropagation()
+  try {
+    await ElMessageBox.confirm('确定要删除这个对话吗？删除后无法恢复。', '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await deleteIPSession(s.session_id)
+    ElMessage.success('删除成功')
+    // 如果删除的是当前对话，新建一个
+    if (s.session_id === activeSessionId.value) {
+      chat.newSession()
+    }
+    await loadSessions()
+  } catch {
+    // 用户取消
+  }
 }
 
 // ─── 步骤 ───
@@ -230,16 +252,19 @@ function toggleFavorite(img: ChatImage, _f: boolean) {
           <p>还没有对话记录</p>
         </div>
         <div
-          v-for="s in sessions" :key="s.sessionId"
+          v-for="s in sessions" :key="s.session_id"
           class="sidebar__item"
-          :class="{ 'sidebar__item--active': s.sessionId === activeSessionId }"
+          :class="{ 'sidebar__item--active': s.session_id === activeSessionId }"
           @click="selectSession(s)"
         >
           <div class="sidebar__item-top">
             <span class="sidebar__item-icon">{{ getSessionIcon(s) }}</span>
             <span class="sidebar__item-title">{{ getSessionTitle(s) }}</span>
+            <button class="sidebar__item-delete" @click="handleDeleteSession($event, s)" title="删除对话">
+              <Delete style="width:14px;height:14px" />
+            </button>
           </div>
-          <div class="sidebar__item-time">{{ formatTime(s.updatedAt || s.createdAt) }}</div>
+          <div class="sidebar__item-time">{{ formatTime(s.updated_at || s.created_at) }}</div>
         </div>
       </div>
     </aside>
@@ -375,6 +400,22 @@ function toggleFavorite(img: ChatImage, _f: boolean) {
                   @click="handleAction(act)" :disabled="chat.generating">
                   {{ act.label }}
                 </button>
+              </div>
+            </div>
+
+            <!-- 导出列表 -->
+            <div v-else-if="msg.type === 'export_list'" class="msg__bubble msg__bubble--ai">
+              <span class="msg__accent-bar"></span>
+              <p class="msg__text">{{ msg.content }}</p>
+              <div class="msg__export-grid">
+                <a v-for="(img, i) in (msg.images || [])" :key="i"
+                   :href="img.url"
+                   :download="img.label + '.png'"
+                   class="export-cell"
+                   :title="'点击保存：' + img.label">
+                  <img :src="img.thumbnail_url || img.url" :alt="img.label" />
+                  <span class="export-cell__label">{{ img.label }}</span>
+                </a>
               </div>
             </div>
 
@@ -578,6 +619,30 @@ function toggleFavorite(img: ChatImage, _f: boolean) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.sidebar__item-delete {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-placeholder);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.sidebar__item-delete:hover {
+  background: rgba(245, 108, 108, 0.1);
+  color: #f56c6c;
+}
+.sidebar__item:hover .sidebar__item-delete {
+  display: flex;
 }
 .sidebar__item-time {
   font-size: 11px;
@@ -1119,5 +1184,52 @@ function toggleFavorite(img: ChatImage, _f: boolean) {
   .msg__bubble { max-width: 85%; }
   .msg__card { max-width: 90%; }
   .msg__sheet { max-width: 100%; }
+}
+
+/* ─── 导出列表 ─── */
+.msg__export-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.export-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.export-cell:hover {
+  background: rgba(200, 68, 43, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.export-cell img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+.export-cell__label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+@media (max-width: 768px) {
+  .msg__export-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 </style>

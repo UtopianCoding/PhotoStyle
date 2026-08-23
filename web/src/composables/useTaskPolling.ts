@@ -1,6 +1,7 @@
 // 任务轮询组合式函数：按间隔拉取任务状态，终态自动停止
 import { onUnmounted, ref, watch } from 'vue'
-import { getTaskStatus } from '@/api/style'
+import { getTaskStatus, getPublicTaskStatus } from '@/api/style'
+import { useUserStore } from '@/stores/user'
 import type { StyleTask } from '@/types'
 
 /**
@@ -21,7 +22,11 @@ export function useTaskPolling(taskIdGetter: () => string, interval = 2000) {
     if (!id) return
     loading.value = true
     try {
-      const data = await getTaskStatus(id)
+      const userStore = useUserStore()
+      // 已登录用认证接口，未登录用公开接口（分享海报扫码场景）
+      const data = userStore.isLoggedIn
+        ? await getTaskStatus(id)
+        : await getPublicTaskStatus(id)
       task.value = data
       // 终态停止轮询
       if (data.status === 'success' || data.status === 'failed' || data.status === 'canceled') {

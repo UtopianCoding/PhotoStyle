@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { ImageInfo } from '@/types'
-import { listImages } from '@/api/image'
+import { listImages, deleteImage } from '@/api/image'
 
 export const useImageStore = defineStore('image', () => {
   // 图片 ID
@@ -20,6 +20,8 @@ export const useImageStore = defineStore('image', () => {
   const myImagesLoading = ref<boolean>(false)
   // 列表是否已加载过（避免重复请求）
   const myImagesLoaded = ref<boolean>(false)
+  // 正在删除的图片 ID（用于 UI 反馈）
+  const deletingImageId = ref<string | null>(null)
 
   /** 设置当前图片 */
   function setImage(image: ImageInfo) {
@@ -48,6 +50,39 @@ export const useImageStore = defineStore('image', () => {
     }
   }
 
+  /** 强制重新加载图片列表 */
+  async function reloadMyImages() {
+    myImagesLoaded.value = false
+    myImagesLoading.value = true
+    try {
+      myImages.value = await listImages()
+      myImagesLoaded.value = true
+    } catch {
+      // 加载失败保持当前列表
+    } finally {
+      myImagesLoading.value = false
+    }
+  }
+
+  /** 删除图片 */
+  async function removeImage(id: string) {
+    deletingImageId.value = id
+    try {
+      await deleteImage(id)
+      // 从列表中移除
+      myImages.value = myImages.value.filter(img => img.imageId !== id)
+      // 如果删除的是当前选中的图片，重置状态
+      if (imageId.value === id) {
+        reset()
+      }
+      return true
+    } catch {
+      return false
+    } finally {
+      deletingImageId.value = null
+    }
+  }
+
   /** 重置图片状态 */
   function reset() {
     imageId.value = ''
@@ -64,9 +99,12 @@ export const useImageStore = defineStore('image', () => {
     myImages,
     myImagesLoading,
     myImagesLoaded,
+    deletingImageId,
     setImage,
     setProgress,
     loadMyImages,
+    reloadMyImages,
+    removeImage,
     reset,
   }
 })

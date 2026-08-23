@@ -128,7 +128,7 @@
           <h2>联系我们</h2>
           <p>
             如果你对本用户协议有任何疑问，欢迎通过
-            <a href="mailto:hello@photostyle.app">hello@photostyle.app</a>
+            <a href="mailto:utopiancoding@gmail.com">utopiancoding@gmail.com</a>
             或我们的<RouterLink to="/contact">联系页面</RouterLink>与我们取得联系。
           </p>
         </section>

@@ -53,10 +53,17 @@ export function convert(params: ConvertParams) {
 }
 
 /**
- * 查询任务状态
+ * 查询任务状态（需登录）
  */
 export function getTaskStatus(taskId: string) {
   return request<StyleTask>({ url: `/style/tasks/${taskId}`, method: 'get' })
+}
+
+/**
+ * 公开查看任务结果（无需登录，用于分享海报扫码查看）
+ */
+export function getPublicTaskStatus(taskId: string) {
+  return request<StyleTask>({ url: `/style/public/tasks/${taskId}`, method: 'get' })
 }
 
 /**

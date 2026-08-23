@@ -33,7 +33,6 @@ from app.core.exceptions import (
     ForbiddenException,
     ImageNotFoundException,
     InsufficientCreditsException,
-    RateLimitExceededException,
     SkillNotFoundException,
     TaskNotFoundException,
 )
@@ -443,18 +442,12 @@ class StyleService:
                 # 重置为 0
                 user.usage_today = 0
             
-            # 检查是否超过每日限制
-            daily_limit = settings.rate_limit.free_user_daily_limit
-            if user.usage_today >= daily_limit:
-                raise RateLimitExceededException(
-                    f"今日转换次数已达上限（{daily_limit} 次），请明天再试"
-                )
-            
-            # 检查积分余额（每次转换消耗 2 积分）
-            credit_cost = 2
+            # 检查积分余额（每次转换扣除积分数从系统配置读取）
+            credit_cost = settings.rate_limit.credit_cost_per_convert
             if user.credits < credit_cost:
                 raise InsufficientCreditsException(
-                    f"积分不足，当前余额 {user.credits}，需要 {credit_cost} 积分。请先充值"
+                    f"积分不足，当前余额 {user.credits}，需要 {credit_cost} 积分。"
+                    f"您可以通过邀请新用户（每次奖励 6 积分）或提交首次反馈（奖励 3 积分）来获取积分"
                 )
 
         # 4. 序列化选项
@@ -779,7 +772,7 @@ class StyleService:
                 analysis_json=analysis_json_str,
                 provider_response=provider_resp_str,
                 favorite=False,
-                credits_used=1,
+                credits_used=4,
             )
             result_records.append((rid, r.url))
 
@@ -799,18 +792,16 @@ class StyleService:
             duration_ms=duration_ms,
         )
 
-        # 阶段5：标记任务完成 + 扣减用户积分
-        await self.repo.update_task_status(
-            task.task_id, status="success", stage="done", progress=100
-        )
-        # 扣减积分（每次转换消耗 2 积分，非管理员用户）
+        # 阶段5：扣减用户积分（在标记任务成功之前，确保积分扣除成功）
+        # 扣减积分（每次转换扣除积分数从系统配置读取，非管理员用户）
         stmt = select(User).where(User.user_id == task.user_id)
         result = await self.db.execute(stmt)
         user = result.scalar_one_or_none()
         if user and not user.is_admin:
             from app.services.credit_service import CreditService
             credit_service = CreditService(self.db)
-            credit_cost = 2
+            credit_cost = settings.rate_limit.credit_cost_per_convert
+            logger.info(f"[积分] 准备扣除用户 {task.user_id} 的 {credit_cost} 积分（转换消耗）")
             await credit_service.deduct_credits(
                 user_id=task.user_id,
                 amount=credit_cost,
@@ -818,6 +809,14 @@ class StyleService:
                 description=f"风格转换消耗积分（技能: {task.skill_id}）",
                 task_id=task.task_id,
             )
+            logger.info(f"[积分] 用户 {task.user_id} 扣除 {credit_cost} 积分成功，当前余额: {user.credits}")
+        else:
+            logger.info(f"[积分] 用户 {task.user_id} 是管理员或不存在，跳过积分扣除")
+        
+        # 标记任务完成（在积分扣除成功后）
+        await self.repo.update_task_status(
+            task.task_id, status="success", stage="done", progress=100
+        )
         await self.db.commit()
 
         # 后台异步：下载结果图 → 上传永久存储 → 生成缩略图 → 替换 URL
@@ -871,6 +870,39 @@ class StyleService:
             results=result_models,
             error=task.error_message if task.status == "failed" else None,
             final_prompt=final_prompt_used,
+        )
+
+    async def get_public_task_status(self, task_id: str) -> TaskStatusResponse:
+        """公开查看任务状态（无需登录，用于分享链接扫码查看）"""
+        task = await self.repo.get_task(task_id)
+        if task is None:
+            raise TaskNotFoundException(f"任务 [{task_id}] 不存在")
+
+        results = await self.repo.get_results_by_task(task_id)
+        result_models = [
+            TaskResult(
+                result_id=r.result_id,
+                result_url=r.result_url,
+                thumbnail_url=r.thumbnail_url,
+                favorite=False,  # 公开接口不返回收藏状态
+                created_at=r.created_at,
+            )
+            for r in results
+        ]
+
+        image = await self.repo.get_image(task.image_id)
+
+        return TaskStatusResponse(
+            task_id=task.task_id,
+            image_id=task.image_id,
+            original_url=image.original_url if image else "",
+            status=task.status,
+            stage=task.stage,
+            progress=task.progress,
+            message=task.error_message,
+            results=result_models,
+            error=task.error_message if task.status == "failed" else None,
+            final_prompt=None,  # 公开接口不暴露提示词
         )
 
     async def cancel_task(self, user_id: str, task_id: str) -> TaskStatusResponse:

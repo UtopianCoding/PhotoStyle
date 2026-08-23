@@ -133,3 +133,21 @@ async def get_session_detail(
         stickers=sticker_items,
     )
     return ApiResponse.success(data=detail)
+
+
+@router.delete("/sessions/{session_id}", response_model=ApiResponse[None])
+async def delete_session(
+    session_id: str, user: CurrentUser, db: DBSession
+) -> ApiResponse[None]:
+    """删除会话及其所有关联数据"""
+    repo = IPChatRepository(db)
+
+    session = await repo.get_session(session_id)
+    if not session:
+        return ApiResponse.error(message="会话不存在", code=40400)
+    if session.user_id != user.user_id:
+        return ApiResponse.error(message="无权删除", code=40300)
+
+    await repo.delete_session(session_id)
+    await db.commit()
+    return ApiResponse.success(message="删除成功")

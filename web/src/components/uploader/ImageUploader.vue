@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 图片上传组件：支持点击 / 拖拽上传，展示进度与预览
 import { ref } from 'vue'
-import { Picture } from '@element-plus/icons-vue'
+import { Picture, Delete } from '@element-plus/icons-vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUpload } from '@/composables/useUpload'
 import { useImageStore } from '@/stores/image'
 import type { ImageInfo } from '@/types'
@@ -37,6 +38,36 @@ function selectExisting(img: ImageInfo) {
   imageStore.setImage(img)
   previewUrl.value = ''
   showExisting.value = false
+}
+
+/** 删除图片（带确认弹窗） */
+async function handleDeleteImage(img: ImageInfo, event: Event) {
+  // 阻止事件冒泡，避免触发选择
+  event.stopPropagation()
+  
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这张图片吗？此操作无法撤销。',
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    const success = await imageStore.removeImage(img.imageId)
+    if (success) {
+      ElMessage.success('图片已删除')
+    } else {
+      ElMessage.error('删除失败，请重试')
+    }
+  } catch (error) {
+    // 用户取消删除，不做处理
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败，请重试')
+    }
+  }
 }
 
 function onInputChange(e: Event) {
@@ -122,21 +153,32 @@ function clear() {
               还没有上传记录，先传一张照片吧
             </p>
             <div v-else class="existing__grid">
-              <button
+              <div
                 v-for="img in imageStore.myImages"
                 :key="img.imageId"
                 class="existing__item"
                 :title="img.originalUrl"
-                @click="selectExisting(img)"
               >
-                <img
-                  :src="img.thumbnailUrl || img.originalUrl"
-                  alt="已上传图片"
-                  class="existing__img"
-                  loading="lazy"
-                />
-                <span class="existing__item-hint">选用</span>
-              </button>
+                <button class="existing__item-btn" @click="selectExisting(img)">
+                  <img
+                    :src="img.thumbnailUrl || img.originalUrl"
+                    alt="已上传图片"
+                    class="existing__img"
+                    loading="lazy"
+                  />
+                  <span class="existing__item-hint">选用</span>
+                </button>
+                <button
+                  class="existing__item-delete"
+                  :disabled="imageStore.deletingImageId === img.imageId"
+                  @click="handleDeleteImage(img, $event)"
+                  :aria-label="`删除图片 ${img.imageId}`"
+                >
+                  <el-icon>
+                    <Delete />
+                  </el-icon>
+                </button>
+              </div>
             </div>
           </div>
         </transition>
@@ -362,17 +404,25 @@ function clear() {
 }
 .existing__item {
   position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #fff;
+  aspect-ratio: 1 / 1;
+}
+.existing__item-btn {
+  position: relative;
   appearance: none;
   cursor: pointer;
   padding: 0;
   border: 2px solid transparent;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #fff;
-  aspect-ratio: 1 / 1;
+  background: transparent;
+  width: 100%;
+  height: 100%;
   transition: border-color 0.2s ease, transform 0.12s ease, box-shadow 0.2s ease;
 }
-.existing__item:hover {
+.existing__item-btn:hover {
   border-color: var(--color-primary);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
@@ -393,7 +443,7 @@ function clear() {
   transform: translateY(100%);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
-.existing__item:hover .existing__item-hint {
+.existing__item-btn:hover .existing__item-hint {
   opacity: 1;
   transform: translateY(0);
 }
@@ -402,5 +452,35 @@ function clear() {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* 删除按钮：右上角圆形，默认透明，悬停时显示 */
+.existing__item-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+  z-index: 10;
+}
+.existing__item:hover .existing__item-delete {
+  opacity: 1;
+}
+.existing__item-delete:hover {
+  background: rgba(200, 68, 43, 0.9);
+}
+.existing__item-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

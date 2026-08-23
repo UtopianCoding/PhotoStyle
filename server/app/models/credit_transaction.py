@@ -24,7 +24,7 @@ class CreditTransaction(Base):
     transaction_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False, comment="交易ID")
     # 所属用户ID
     user_id: Mapped[str] = mapped_column(String(64), ForeignKey("users.user_id"), index=True, nullable=False, comment="用户ID")
-    # 交易类型：register_bonus / convert_cost / recharge / invite_reward / invite_bonus / admin_adjust
+    # 交易类型：register_bonus / convert_cost / recharge / invite_reward / invite_bonus / admin_adjust / feedback_reward
     transaction_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="交易类型")
     # 积分变动量（正数=收入，负数=支出）
     amount: Mapped[int] = mapped_column(Integer, nullable=False, comment="积分变动量")

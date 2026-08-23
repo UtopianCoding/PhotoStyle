@@ -215,6 +215,51 @@ export function useIPStickerChat() {
 
       case 'toggle_favorite_done':
         break
+
+      case 'export_ready': {
+        // 导出贴纸列表
+        const count = msg.payload.count as number
+        const stickers = msg.payload.stickers as Array<{
+          sticker_id: string
+          index: number
+          label: string
+          url: string
+          thumbnail_url?: string
+        }>
+        messages.value.push({
+          id: uid(),
+          role: 'assistant',
+          type: 'export_list',
+          content: `共 ${count} 张贴纸，右键点击图片可单独保存：`,
+          images: stickers.map((s) => ({
+            sticker_id: s.sticker_id,
+            url: s.url,
+            thumbnail_url: s.thumbnail_url,
+            label: s.label,
+          })) as DisplayMessage['images'],
+          timestamp: msg.timestamp,
+        })
+        break
+      }
+
+      case 'sticker_updated': {
+        // 重绘后，找到最后一个 image_grid 消息，就地替换对应的贴纸
+        messages.value = messages.value.filter((m) => m.type !== 'image_generating')
+        const oldId = msg.payload.old_sticker_id as string
+        const newImage = msg.payload.new_image as DisplayMessage['images'] extends (infer T)[] ? T : never
+        if (newImage) {
+          for (let i = messages.value.length - 1; i >= 0; i--) {
+            if (messages.value[i].type === 'image_grid' && messages.value[i].images) {
+              const imgs = messages.value[i].images!.map((img) =>
+                img.sticker_id === oldId ? { ...img, ...newImage } : img
+              )
+              messages.value[i] = { ...messages.value[i], images: imgs }
+              break
+            }
+          }
+        }
+        break
+      }
     }
 
     scrollToBottom()
@@ -272,6 +317,7 @@ export function useIPStickerChat() {
   function switchSession(sid: string) {
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectAttempts = 0
+    sessionId.value = sid
     messages.value = []
     generating.value = false
     sessionStatus.value = ''
@@ -303,7 +349,15 @@ export function useIPStickerChat() {
   function disconnect() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
     reconnectAttempts = 0
-    ws.value?.close()
+    if (ws.value) {
+      // 清除事件处理器，防止旧连接的事件在关闭过程中仍然触发，
+      // 导致用旧会话数据覆盖新会话的消息
+      ws.value.onopen = null
+      ws.value.onmessage = null
+      ws.value.onclose = null
+      ws.value.onerror = null
+      ws.value.close()
+    }
     ws.value = null
   }
 

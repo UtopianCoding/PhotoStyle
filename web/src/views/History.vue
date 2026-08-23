@@ -252,11 +252,35 @@ function openResult(taskId: string) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: card-fade-in 0.4s ease-out backwards;
 }
+.history-card:nth-child(1) { animation-delay: 0.05s; }
+.history-card:nth-child(2) { animation-delay: 0.1s; }
+.history-card:nth-child(3) { animation-delay: 0.15s; }
+.history-card:nth-child(4) { animation-delay: 0.2s; }
+
 .history-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(156, 150, 139, 0.18);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(156, 150, 139, 0.2),
+              0 4px 8px rgba(156, 150, 139, 0.12);
+}
+.history-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(200, 68, 43, 0.04) 100%
+  );
+  transition: opacity 0.3s ease;
+}
+.history-card:hover::after {
+  opacity: 1;
 }
 .history-card__check {
   position: absolute;
@@ -325,5 +349,17 @@ function openResult(taskId: string) {
   --el-button-hover-text-color: var(--color-primary-dark);
   --el-button-hover-border-color: var(--color-primary);
   min-width: 120px;
+}
+
+/* 卡片入场动画 */
+@keyframes card-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

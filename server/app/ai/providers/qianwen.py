@@ -4,10 +4,11 @@
 通过 dashscope.MultiModalConversation SDK 调用 Qwen-Image 系列模型。
 支持文生图（T2I）和图生图（I2I）。
 
+配置从内存缓存读取（数据库持久化），运行时修改立即生效。
+
 官方文档：https://help.aliyun.com/zh/model-studio/qwen-image-api
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -20,9 +21,9 @@ from app.ai.schemas import (
     ImageProviderResponse,
     ImageResult,
 )
-from app.config import settings
 from app.config.dashscope import get_image_size
 from app.core.exceptions import AIServiceException
+from app.services.model_config_store import model_config_store
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,11 @@ class QianwenProvider(ImageProvider):
     def get_provider_id(self) -> str:
         return "qianwen"
 
+    def _get_config(self) -> dict[str, Any]:
+        return model_config_store.get_config("qianwen") or {}
+
     def is_available(self) -> bool:
-        return bool(settings.dashscope.api_key.get_secret_value())
+        return bool(self._get_config().get("api_key"))
 
     async def generate_image(self, request: ImageProviderRequest) -> ImageProviderResponse:
         # 同步 SDK 放入线程池执行，并加超时（retries=1：硬失败不重复放大延迟）
@@ -51,25 +55,25 @@ class QianwenProvider(ImageProvider):
         import dashscope
         from dashscope import MultiModalConversation
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        cfg = self._get_config()
+        api_key = cfg.get("api_key", "")
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
 
         # 模型名统一小写
-        model = (request.model or settings.dashscope.model_image).lower()
+        model = (request.model or cfg.get("model_image", "qwen-image-3.0-pro")).lower()
         size = request.options.size or get_image_size(request.options.ratio)
         n = request.options.num_results
+        workspace_id = cfg.get("workspace_id", "")
+        region = cfg.get("region", "cn-beijing")
 
         # 设置 base URL
         # 如果配置了 Workspace ID，使用专属端点；否则使用共享 DashScope 端点
-        if settings.dashscope.workspace_id:
-            # 专属端点：{WorkspaceId}.cn-beijing.maas.aliyuncs.com
+        if workspace_id:
             dashscope.base_http_api_url = (
-                f"https://{settings.dashscope.workspace_id}."
-                f"{settings.dashscope.region}.maas.aliyuncs.com/api/v1"
+                f"https://{workspace_id}.{region}.maas.aliyuncs.com/api/v1"
             )
         else:
-            # 共享端点
             dashscope.base_http_api_url = (
                 f"https://dashscope.aliyuncs.com/api/v1"
             )

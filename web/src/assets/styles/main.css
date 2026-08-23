@@ -129,3 +129,161 @@ a {
     animation: none;
   }
 }
+
+/* ====== 纸张纹理工具类 ====== */
+/* 宣纸质感：SVG 噪点模拟手工纸张纤维，pointer-events:none 不影响交互 */
+.paper-texture {
+  position: relative;
+  background-color: var(--color-bg-card);
+}
+.paper-texture::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
+}
+
+/* ====== 更精致的路由过渡 ====== */
+.fade-enter-active {
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fade-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ====== Element Plus 对话框全局覆盖 ====== */
+.el-overlay .el-dialog {
+  border-radius: var(--radius-lg) !important;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 20px 60px rgba(28, 28, 26, 0.12),
+              0 8px 24px rgba(28, 28, 26, 0.08) !important;
+}
+.el-overlay .el-dialog__header {
+  border-bottom: 1px solid var(--color-border);
+  padding: 18px 24px !important;
+  margin-right: 0 !important;
+}
+.el-overlay .el-dialog__title {
+  font-family: var(--font-display) !important;
+  font-weight: 700 !important;
+  font-size: 17px !important;
+  color: var(--color-text) !important;
+  letter-spacing: 0.04em !important;
+}
+.el-overlay .el-dialog__body {
+  padding: 24px !important;
+}
+.el-overlay .el-dialog__footer {
+  border-top: 1px solid var(--color-border);
+  padding: 14px 24px !important;
+}
+/* 关闭按钮：石灰调，悬停朱砂 */
+.el-overlay .el-dialog__headerbtn {
+  top: 18px;
+  right: 20px;
+  font-size: 18px;
+  color: var(--color-text-secondary);
+  transition: color 0.2s;
+}
+.el-overlay .el-dialog__headerbtn:hover {
+  color: var(--color-primary);
+}
+
+/* ====== Element Plus 表格覆盖 ====== */
+.el-table {
+  --el-table-border-color: var(--color-border);
+  --el-table-header-bg-color: rgba(245, 242, 236, 0.5);
+  --el-table-row-hover-bg-color: rgba(200, 68, 43, 0.03);
+}
+.el-table th.el-table__cell {
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+/* ====== Element Plus 标签页覆盖 ====== */
+.el-tabs__item {
+  font-family: var(--font-body);
+  transition: color 0.25s ease;
+}
+.el-tabs__active-bar {
+  background-color: var(--color-primary) !important;
+}
+.el-tabs__item.is-active {
+  color: var(--color-primary) !important;
+}
+
+/* ====== 按钮交互增强 ====== */
+.el-button {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.el-button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+.el-button:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* 输入框聚焦：朱砂描边呼吸 */
+.el-input__wrapper:focus-within,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--color-primary) inset,
+              0 0 0 3px rgba(200, 68, 43, 0.08) !important;
+}
+
+/* Element Plus 下拉菜单：纸张质感 */
+.el-dropdown-menu {
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 8px 24px rgba(28, 28, 26, 0.1),
+              0 4px 8px rgba(28, 28, 26, 0.06) !important;
+  padding: 4px !important;
+}
+.el-dropdown-menu__item {
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  letter-spacing: 0.02em;
+  padding: 8px 14px !important;
+  transition: all 0.18s ease !important;
+}
+.el-dropdown-menu__item:hover {
+  background: rgba(200, 68, 43, 0.06) !important;
+  color: var(--color-primary) !important;
+}
+
+/* 分页器覆盖 */
+.el-pagination button:hover,
+.el-pager li:hover {
+  color: var(--color-primary) !important;
+}
+.el-pager li.is-active {
+  color: var(--color-primary) !important;
+}
+
+/* 消息框覆盖 */
+.el-message-box {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid var(--color-border) !important;
+}
+.el-message-box__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+/* 开关覆盖 */
+.el-switch.is-checked .el-switch__core {
+  border-color: var(--color-primary) !important;
+  background-color: var(--color-primary) !important;
+}

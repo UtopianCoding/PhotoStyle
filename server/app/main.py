@@ -22,6 +22,7 @@ from app.api.routes import (
     auth_router,
     conversations_router,
     credits_router,
+    feedback_router,
     history_router,
     images_router,
     ip_sticker_rest_router,
@@ -35,13 +36,16 @@ from app.config import settings
 from app.core.exceptions import AppException
 from app.init_db import (
     ensure_credit_transactions_table,
+    ensure_feedbacks_table,
     ensure_ip_sticker_tables,
     ensure_model_interactions_table,
     ensure_payment_records_table,
+    ensure_provider_configs_table,
     ensure_skill_configs_table,
     ensure_user_permissions_column,
     ensure_user_referral_columns,
 )
+from app.services.model_config_store import model_config_store
 from app.services.style_service import close_http_client
 from app.core.skill_engine import SKILLS_DIR
 from app.schemas.common import ApiResponse
@@ -82,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(ip_sticker_rest_router, prefix="/api/v1")
     app.include_router(credits_router, prefix="/api/v1")
     app.include_router(skill_config_router, prefix="/api/v1")
+    app.include_router(feedback_router, prefix="/api/v1")
 
     # WebSocket 路由
     app.include_router(ip_sticker_ws_router, prefix="/api/v1")
@@ -177,6 +182,10 @@ async def on_startup() -> None:
         await ensure_user_referral_columns()
         await ensure_skill_configs_table()
         await ensure_payment_records_table()
+        await ensure_provider_configs_table()
+        await ensure_feedbacks_table()
+        # 加载 Provider 配置到内存缓存（首次启动从 .env 播种）
+        await model_config_store.seed_from_env_if_empty()
     except Exception as exc:  # 建表失败不应阻断启动
         logger.warning("启动时确保数据表 / 字段存在失败: %s", exc)
     logger.info(

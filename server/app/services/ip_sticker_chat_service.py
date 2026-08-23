@@ -166,6 +166,7 @@ class IPStickerChatService:
             "generate_full": self._handle_approve_test,
             "redraw_sticker": self._handle_redraw_sticker,
             "toggle_favorite": self._handle_toggle_favorite,
+            "export_stickers": self._handle_export_stickers,
         }
 
         handler = handlers.get(msg_type)
@@ -705,19 +706,19 @@ class IPStickerChatService:
                 success_results = [r for r in results if r["status"] == "success"]
                 if success_results:
                     r = success_results[0]
-                    await self._save_and_send_image(
-                        images=[{
+                    # 重绘结果就地更新到原网格中，而非单独展示
+                    await self._send_text(f"「{r['label']}」重绘完成！")
+                    await self._send("sticker_updated", {
+                        "old_sticker_id": original.sticker_id,
+                        "new_image": {
                             "url": r["url"],
                             "thumbnail_url": r.get("thumbnail_url"),
                             "sticker_id": r["sticker_id"],
+                            "index": r["index"],
                             "label": r["label"],
-                        }],
-                        message=f"「{r['label']}」重绘完成！",
-                        actions=[
-                            {"action": "redraw_sticker", "label": "再改一次", "type": "default",
-                             "payload": {"sticker_id": r["sticker_id"]}},
-                        ],
-                    )
+                            "status": r["status"],
+                        },
+                    })
                 else:
                     await self._send_error(f"「{original.label}」重绘失败", req_id)
 
@@ -736,6 +737,27 @@ class IPStickerChatService:
         await self._send("toggle_favorite_done", {
             "sticker_id": sticker_id,
             "is_favorite": bool(is_favorite),
+        }, req_id)
+
+    async def _handle_export_stickers(self, payload: dict, req_id: str | None) -> None:
+        """导出表情包贴纸列表"""
+        stickers = await self.repo.list_stickers(self.session_id, batch_type="full_batch")
+        if not stickers:
+            raise ValidationException("没有可导出的表情包，请先生成表情包")
+
+        sticker_urls = [
+            {
+                "sticker_id": s.sticker_id,
+                "index": s.sticker_index,
+                "label": s.label,
+                "url": s.result_url,
+                "thumbnail_url": s.thumbnail_url,
+            }
+            for s in stickers
+        ]
+        await self._send("export_ready", {
+            "count": len(sticker_urls),
+            "stickers": sticker_urls,
         }, req_id)
 
     # ================================================================

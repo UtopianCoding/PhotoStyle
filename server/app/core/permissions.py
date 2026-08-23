@@ -21,6 +21,8 @@ from dataclasses import dataclass
 PERM_HOME = "home:access"  # 首页（所有登录用户默认拥有）
 PERM_HISTORY = "history:view"  # 历史记录页
 PERM_CONVERSATIONS = "conversations:view"  # 模型交互记录页
+PERM_PROFILE = "profile:view"  # 个人中心页（照片管理、个人信息、意见反馈）
+PERM_IP_STICKER = "ip_sticker:view"  # 表情包页
 PERM_ADMIN_ACCESS = "admin:access"  # 管理后台入口（用户管理 / 系统配置）
 PERM_ADMIN_USERS = "admin:users"  # 用户管理（编辑用户、分配权限）
 PERM_ADMIN_CONFIG = "admin:config"  # 系统配置
@@ -30,6 +32,8 @@ ALL_PERMISSIONS: list[str] = [
     PERM_HOME,
     PERM_HISTORY,
     PERM_CONVERSATIONS,
+    PERM_PROFILE,
+    PERM_IP_STICKER,
     PERM_ADMIN_ACCESS,
     PERM_ADMIN_USERS,
     PERM_ADMIN_CONFIG,
@@ -47,6 +51,7 @@ DEFAULT_USER_PERMISSIONS: list[str] = [
     PERM_HOME,
     PERM_HISTORY,
     PERM_CONVERSATIONS,
+    PERM_PROFILE,
 ]
 
 
@@ -67,6 +72,8 @@ PERMISSION_CATALOG: list[PermissionDef] = [
     PermissionDef(PERM_HOME, "首页", "基础功能", "访问首页进行图片上传与风格转换"),
     PermissionDef(PERM_HISTORY, "历史记录", "基础功能", "查看自己的风格转换历史"),
     PermissionDef(PERM_CONVERSATIONS, "交互记录", "基础功能", "查看与 AI 模型的交互记录"),
+    PermissionDef(PERM_PROFILE, "个人中心", "基础功能", "管理照片、编辑个人信息、提交意见反馈"),
+    PermissionDef(PERM_IP_STICKER, "表情包", "基础功能", "创建和使用表情包"),
     PermissionDef(PERM_ADMIN_ACCESS, "管理后台", "后台管理", "进入管理后台（用户管理 / 系统配置）"),
     PermissionDef(PERM_ADMIN_USERS, "用户管理", "后台管理", "查看与编辑用户、分配权限"),
     PermissionDef(PERM_ADMIN_CONFIG, "系统配置", "后台管理", "修改模型、存储与应用配置"),
@@ -83,6 +90,7 @@ ROLE_PRESETS: dict[str, dict] = {
             PERM_HOME,
             PERM_HISTORY,
             PERM_CONVERSATIONS,
+            PERM_PROFILE,
         ],
     },
     "viewer": {

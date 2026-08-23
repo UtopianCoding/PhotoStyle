@@ -111,7 +111,7 @@ class ImageService:
             asyncio.to_thread(self.storage.upload, thumb_key, thumbnail_bytes, "image/jpeg"),
         )
 
-        # 5. 落库
+        # 5. 落库（size 存储用户上传的原始文件大小）
         image = await self.repo.create_image(
             image_id=uuid.uuid4().hex,
             user_id=user_id,
@@ -120,7 +120,7 @@ class ImageService:
             mime_type=mime_type,
             width=info.width,
             height=info.height,
-            size=len(compressed_bytes),
+            size=len(file_bytes),
             compressed=compressed,
             compressed_ratio=compressed_ratio,
         )

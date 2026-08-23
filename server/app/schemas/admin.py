@@ -45,12 +45,22 @@ class MinimaxConfigRead(BaseModel):
     model_image: str
 
 
+class VolcengineConfigRead(BaseModel):
+    """火山引擎（Seedream）配置（脱敏）"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    api_key: str = Field("", description="API Key（脱敏）")
+    base_url: str
+    model_image: str
+
+
 class ModelConfig(BaseModel):
     """模型配置（聚合多 provider + 默认路由）"""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao
+    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao / volcengine
     default_provider: str
     # 千问配置（provider_id=qianwen）
     qianwen: DashScopeConfigRead
@@ -58,6 +68,8 @@ class ModelConfig(BaseModel):
     dalle: OpenAIConfigRead
     # MiniMax 配置（provider_id=minimax）
     minimax: MinimaxConfigRead
+    # 火山引擎配置（provider_id=volcengine）
+    volcengine: VolcengineConfigRead
 
 
 # ============================================================
@@ -107,7 +119,7 @@ class AppConfigRead(BaseModel):
 
     log_level: str
     cors_allowed_origins: list[str]
-    rate_limit_free_user_daily_limit: int
+    rate_limit_credit_cost_per_convert: int
     access_token_expire_minutes: int
 
 
@@ -156,6 +168,16 @@ class MinimaxConfigUpdate(BaseModel):
     model_image: str | None = None
 
 
+class VolcengineConfigUpdate(BaseModel):
+    """火山引擎（Seedream）配置更新"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
+    api_key: str | None = None
+    base_url: str | None = None
+    model_image: str | None = None
+
+
 class ModelConfigUpdate(BaseModel):
     """模型配置更新"""
 
@@ -165,6 +187,7 @@ class ModelConfigUpdate(BaseModel):
     qianwen: DashScopeConfigUpdate | None = None
     dalle: OpenAIConfigUpdate | None = None
     minimax: MinimaxConfigUpdate | None = None
+    volcengine: VolcengineConfigUpdate | None = None
 
 
 class MinIOConfigUpdate(BaseModel):
@@ -208,7 +231,7 @@ class AppConfigUpdate(BaseModel):
 
     log_level: str | None = None
     cors_allowed_origins: list[str] | None = None
-    rate_limit_free_user_daily_limit: int | None = None
+    rate_limit_credit_cost_per_convert: int | None = None
     access_token_expire_minutes: int | None = None
 
 

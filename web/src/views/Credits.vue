@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 const userStore = useUserStore()
 
 // 状态
-const activeTab = ref('balance')
+const activeTab = ref('invite')
 const balanceInfo = ref<CreditBalanceResponse | null>(null)
 const historyItems = ref<CreditTransactionItem[]>([])
 const historyTotal = ref(0)
@@ -40,6 +40,7 @@ const transactionTypeMap: Record<string, { label: string; color: TagType }> = {
   invite_reward: { label: '邀请奖励', color: 'success' },
   invite_bonus: { label: '被邀请奖励', color: 'success' },
   admin_adjust: { label: '管理员调整', color: 'info' },
+  feedback_reward: { label: '首次反馈奖励', color: 'success' },
 }
 
 // 加载余额信息
@@ -76,6 +77,10 @@ async function loadHistory() {
 async function loadInviteInfo() {
   try {
     inviteInfo.value = await getInviteInfo()
+    // 用当前页面域名拼接邀请链接，避免后端猜测域名不准
+    if (inviteInfo.value?.referralCode) {
+      inviteInfo.value.inviteLink = `${window.location.origin}/login?ref=${inviteInfo.value.referralCode}`
+    }
   } catch {
     ElMessage.error('加载邀请信息失败')
   }
@@ -201,6 +206,7 @@ function formatAmount(amount: number): string {
 
 onMounted(() => {
   loadBalance()
+  loadInviteInfo()
 })
 
 onUnmounted(() => {
@@ -225,7 +231,7 @@ onUnmounted(() => {
             {{ balanceInfo?.credits ?? 0 }}
           </div>
           <div class="credits-balance-card__hint">
-            每次风格转换消耗 2 积分
+            每次风格转换消耗 4 积分
           </div>
         </div>
         <div class="credits-balance-card__stats">
@@ -238,8 +244,8 @@ onUnmounted(() => {
 
       <!-- Tab 切换 -->
       <el-tabs v-model="activeTab" @tab-change="handleTabChange" class="credits-tabs">
-        <!-- 充值 -->
-        <el-tab-pane label="充值" name="recharge">
+        <!-- 充值（暂时隐藏） -->
+        <el-tab-pane v-if="false" label="充值" name="recharge">
           <div class="credits-section">
             <h3 class="credits-section__title">选择充值金额</h3>
             <div class="recharge-presets">
@@ -276,8 +282,8 @@ onUnmounted(() => {
           </div>
         </el-tab-pane>
 
-        <!-- 交易历史 -->
-        <el-tab-pane label="交易历史" name="history">
+        <!-- 交易历史（暂时隐藏） -->
+        <el-tab-pane v-if="false" label="交易历史" name="history">
           <div class="credits-section">
             <div v-loading="historyLoading" class="history-list">
               <div v-if="historyItems.length === 0" class="history-empty">
@@ -437,17 +443,48 @@ onUnmounted(() => {
   margin: 0;
 }
 
-/* 余额卡片 */
+/* 余额卡片：宣纸质感 + 层次感 */
 .credits-balance-card {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 32px;
+  padding: 36px;
   background: linear-gradient(135deg, var(--color-bg-card) 0%, var(--color-accent-bg) 100%);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   margin-bottom: 32px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 16px rgba(156, 150, 139, 0.12),
+              0 2px 6px rgba(156, 150, 139, 0.08),
+              inset 0 1px 0 rgba(250, 248, 243, 0.6);
+  overflow: hidden;
+  animation: card-fade-in 0.5s ease-out;
+}
+/* 纸张纹理叠加 */
+.credits-balance-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
+}
+/* 朱砂装饰角标 */
+.credits-balance-card::after {
+  content: "";
+  position: absolute;
+  top: -24px;
+  right: -24px;
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(200, 68, 43, 0.1) 0%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 .credits-balance-card__label {
@@ -458,17 +495,19 @@ onUnmounted(() => {
 }
 
 .credits-balance-card__amount {
-  font-size: 48px;
+  font-size: 52px;
   font-weight: 700;
   color: var(--color-primary);
   font-family: var(--font-display);
   line-height: 1;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  letter-spacing: -0.02em;
 }
 
 .credits-balance-card__hint {
   font-size: 12px;
   color: var(--color-text-placeholder);
+  letter-spacing: 0.02em;
 }
 
 .credits-balance-card__stats {
@@ -650,25 +689,56 @@ onUnmounted(() => {
 }
 
 .invite-info__stat {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 20px;
+  padding: 24px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: card-fade-in 0.4s ease-out backwards;
+}
+.invite-info__stat:nth-child(1) { animation-delay: 0.1s; }
+.invite-info__stat:nth-child(2) { animation-delay: 0.15s; }
+.invite-info__stat:nth-child(3) { animation-delay: 0.2s; }
+
+.invite-info__stat:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(156, 150, 139, 0.15);
+}
+.invite-info__stat::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 2px;
+  background: var(--color-primary);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.invite-info__stat:hover::after {
+  opacity: 1;
 }
 
 .invite-info__stat-value {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--color-primary);
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
 .invite-info__stat-label {
   font-size: 13px;
   color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
 }
 
 .invite-link-section {
@@ -813,5 +883,17 @@ onUnmounted(() => {
 .pay-dialog-hint {
   font-size: 12px;
   color: var(--color-text-placeholder);
+}
+
+/* 卡片入场动画 */
+@keyframes card-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

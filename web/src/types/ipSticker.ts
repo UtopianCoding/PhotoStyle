@@ -23,6 +23,8 @@ export type ServerMessageType =
   | 'state_changed'
   | 'action_required'
   | 'toggle_favorite_done'
+  | 'sticker_updated'
+  | 'export_ready'
   | 'error'
 
 /** 客户端 → 服务端消息 */
@@ -98,12 +100,12 @@ export interface StickerItem {
 
 /** 会话列表项 */
 export interface SessionItem {
-  sessionId: string
+  session_id: string
   status: string
-  currentStep: number
-  sourceImageId?: string
-  createdAt: string
-  updatedAt: string
+  current_step: number
+  source_image_id?: string
+  created_at: string
+  updated_at: string
 }
 
 /** 会话详情 */

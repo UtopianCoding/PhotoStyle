@@ -23,15 +23,15 @@
         <section class="contact-card">
           <div class="contact-card__item">
             <span class="contact-card__label font-mono-label">EMAIL</span>
-            <a href="mailto:hello@photostyle.app" class="contact-card__value">
-              hello@photostyle.app
+            <a href="mailto:utopiancoding@gmail.com" class="contact-card__value">
+              utopiancoding@gmail.com
             </a>
             <p class="contact-card__desc">一般咨询、合作与反馈</p>
           </div>
           <div class="contact-card__item">
             <span class="contact-card__label font-mono-label">SUPPORT</span>
-            <a href="mailto:support@photostyle.app" class="contact-card__value">
-              support@photostyle.app
+            <a href="mailto:utopiancoding@gmail.com" class="contact-card__value">
+              utopiancoding@gmail.com
             </a>
             <p class="contact-card__desc">技术支持与问题反馈</p>
           </div>
@@ -44,7 +44,7 @@
         <section>
           <h3>如何删除我的账户？</h3>
           <p>
-            目前请联系 support@photostyle.app 申请账户删除。
+            目前请联系 utopiancoding@gmail.com 申请账户删除。
             我们会在收到请求后 3 个工作日内完成删除，同时清除所有关联数据。
           </p>
         </section>

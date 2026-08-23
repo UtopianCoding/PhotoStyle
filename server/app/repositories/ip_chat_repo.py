@@ -7,7 +7,7 @@ IP 贴纸聊天仓储层
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete as sa_delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ip_chat_message import IPChatMessage
@@ -76,6 +76,26 @@ class IPChatRepository:
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
+
+    async def delete_session(self, session_id: str) -> bool:
+        """删除会话及其所有关联数据（消息、母版、贴纸）"""
+        # 删除贴纸
+        await self.db.execute(
+            sa_delete(IPStickerResult).where(IPStickerResult.session_id == session_id)
+        )
+        # 删除母版
+        await self.db.execute(
+            sa_delete(IPMasterTemplate).where(IPMasterTemplate.session_id == session_id)
+        )
+        # 删除消息
+        await self.db.execute(
+            sa_delete(IPChatMessage).where(IPChatMessage.session_id == session_id)
+        )
+        # 删除会话
+        result = await self.db.execute(
+            sa_delete(IPChatSession).where(IPChatSession.session_id == session_id)
+        )
+        return result.rowcount > 0
 
     # -------------------- Message --------------------
 

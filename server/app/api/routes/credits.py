@@ -292,6 +292,7 @@ async def alipay_notify(request: Request, db: DBSession, credit_service: CreditS
 
 @router.get("/invite-info", response_model=ApiResponse[InviteInfoResponse])
 async def get_invite_info(
+    request: Request,
     user: CurrentUser,
     credit_service: CreditServiceDep,
 ) -> ApiResponse[InviteInfoResponse]:
@@ -304,8 +305,12 @@ async def get_invite_info(
     invite_count = await credit_service.get_invite_count(user.user_id)
     total_rewards = invite_count * 6  # 每个邀请奖励 6 积分
 
-    # 构建邀请链接（前端域名 + 邀请码）
-    invite_link = f"https://photostyle.app/register?ref={referral_code}"
+    # 构建邀请链接：从请求 Origin 获取前端域名，兜底使用 CORS 第一个来源
+    origin = request.headers.get("origin", "")
+    if not origin:
+        origins = settings.cors.allowed_origins_list
+        origin = origins[0] if origins else "http://localhost:5173"
+    invite_link = f"{origin}/login?ref={referral_code}"
 
     data = InviteInfoResponse(
         referral_code=referral_code,

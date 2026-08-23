@@ -10,6 +10,7 @@ from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.conversations import router as conversations_router
 from app.api.routes.credits import router as credits_router
+from app.api.routes.feedback import router as feedback_router
 from app.api.routes.history import router as history_router
 from app.api.routes.images import router as images_router
 from app.api.routes.ip_sticker_rest import router as ip_sticker_rest_router
@@ -30,4 +31,5 @@ __all__ = [
     "admin_router",
     "ip_sticker_rest_router",
     "credits_router",
+    "feedback_router",
 ]

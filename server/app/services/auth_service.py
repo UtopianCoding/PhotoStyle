@@ -98,8 +98,6 @@ class AuthService:
         if existing is not None:
             raise ValidationException("该邮箱已注册")
 
-        from app.config import settings
-
         # 处理邀请码（如果提供）
         inviter_id = None
         if payload.referral_code:
@@ -117,7 +115,7 @@ class AuthService:
             credits=10,  # 注册赠送 10 积分
             inviter_id=inviter_id,
             usage_today=0,
-            usage_limit=settings.rate_limit.free_user_daily_limit,
+            usage_limit=999,
             status="active",
             permissions=serialize_permissions(DEFAULT_USER_PERMISSIONS),
         )

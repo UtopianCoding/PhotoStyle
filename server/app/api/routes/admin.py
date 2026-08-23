@@ -1,7 +1,7 @@
 """
 后台配置管理路由
 
-提供系统配置的读取与更新、用户列表查询，所有路由仅管理员可访问。
+提供系统配置的读取与更新、用户列表查询、反馈管理，所有路由仅管理员可访问。
 """
 
 import logging
@@ -9,10 +9,11 @@ import logging
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
-from app.api.deps import AdminServiceDep, AdminUser, AuthServiceDep, DBSession
+from app.api.deps import AdminServiceDep, AdminUser, AuthServiceDep, DBSession, FeedbackServiceDep
 from app.models.user import User
 from app.schemas.admin import AdminUserItem, SystemConfigRead, SystemConfigUpdate
 from app.schemas.common import ApiResponse, PageResponse
+from app.schemas.feedback import AdminFeedbackItem, FeedbackReply, FeedbackStatusUpdate
 from app.schemas.user import AdminUserUpdate, PermissionCatalog
 from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
@@ -39,13 +40,13 @@ async def update_config(
     admin_service: AdminServiceDep,
 ) -> ApiResponse[SystemConfigRead]:
     """
-    更新系统配置（写入 .env 文件）。
+    更新系统配置。
 
-    注意：写入后需重启后端服务才能让新配置在内存中生效。
+    模型配置写入数据库立即生效；存储/应用配置写入 .env 需重启后端服务。
     """
     logger.info("管理员请求更新系统配置")
-    data = admin_service.update_config(payload)
-    return ApiResponse.success(data=data, message="配置已写入 .env，请重启后端服务使新配置生效")
+    data = await admin_service.update_config(payload)
+    return ApiResponse.success(data=data, message="模型配置已立即生效，存储/应用配置需重启后端服务")
 
 
 @router.get("/users", response_model=ApiResponse[PageResponse[AdminUserItem]])
@@ -104,3 +105,73 @@ async def update_user(
     return ApiResponse.success(
         data=AdminService.to_admin_user_item(user), message="用户已更新"
     )
+
+
+# ==================== 反馈管理 ====================
+
+@router.get("/feedbacks", response_model=ApiResponse[PageResponse[AdminFeedbackItem]])
+async def list_feedbacks(
+    _: AdminUser,
+    service: FeedbackServiceDep,
+    page: int = 1,
+    page_size: int = 20,
+    status: str | None = None,
+) -> ApiResponse[PageResponse[AdminFeedbackItem]]:
+    """
+    分页查询所有用户反馈（仅管理员）。
+
+    支持按状态过滤：pending/replied/resolved/closed
+    """
+    page = max(page, 1)
+    page_size = max(min(page_size, 100), 1)
+
+    items, total = await service.list_all_feedbacks(page, page_size, status)
+    return ApiResponse.success(
+        data=PageResponse(total=total, page=page, page_size=page_size, items=items),
+        message="ok",
+    )
+
+
+@router.get("/feedbacks/{feedback_id}", response_model=ApiResponse[AdminFeedbackItem])
+async def get_feedback(
+    feedback_id: str,
+    _: AdminUser,
+    service: FeedbackServiceDep,
+) -> ApiResponse[AdminFeedbackItem]:
+    """获取反馈详情（仅管理员）"""
+    item = await service.get_feedback_detail(feedback_id)
+    return ApiResponse.success(data=item, message="ok")
+
+
+@router.put("/feedbacks/{feedback_id}/reply", response_model=ApiResponse[AdminFeedbackItem])
+async def reply_feedback(
+    feedback_id: str,
+    admin_user: AdminUser,
+    payload: FeedbackReply,
+    service: FeedbackServiceDep,
+) -> ApiResponse[AdminFeedbackItem]:
+    """
+    管理员回复用户反馈（仅管理员）。
+
+    回复后状态自动变更为 replied。
+    """
+    logger.info(f"管理员 {admin_user.user_id} 回复反馈 {feedback_id}")
+    item = await service.reply_feedback(feedback_id, admin_user.user_id, payload)
+    return ApiResponse.success(data=item, message="回复成功")
+
+
+@router.patch("/feedbacks/{feedback_id}/status", response_model=ApiResponse[AdminFeedbackItem])
+async def update_feedback_status(
+    feedback_id: str,
+    _: AdminUser,
+    payload: FeedbackStatusUpdate,
+    service: FeedbackServiceDep,
+) -> ApiResponse[AdminFeedbackItem]:
+    """
+    更新反馈状态（仅管理员）。
+
+    状态可选值：pending/replied/resolved/closed
+    """
+    logger.info(f"更新反馈 {feedback_id} 状态为 {payload.status}")
+    item = await service.update_feedback_status(feedback_id, payload)
+    return ApiResponse.success(data=item, message="状态已更新")

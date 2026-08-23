@@ -7,6 +7,7 @@ import * as adminApi from '@/api/admin'
 import { getPermissionCatalog, updateUser, uploadAvatar } from '@/api/user'
 import { useUserStore } from '@/stores/user'
 import SkillManager from '@/components/admin/SkillManager.vue'
+import FeedbackManager from '@/components/admin/FeedbackManager.vue'
 import type {
   AdminUserItem,
   PermissionCatalog,
@@ -23,8 +24,8 @@ const formRef = ref<FormInstance>()
 // 加载/保存中
 const loading = ref(false)
 const saving = ref(false)
-// 模型 provider 当前激活的 tab（使用 provider_id：qianwen / dalle / minimax）
-const activeProviderTab = ref<'qianwen' | 'dalle' | 'minimax'>('qianwen')
+// 模型 provider 当前激活的 tab（使用 provider_id：qianwen / dalle / minimax / volcengine）
+const activeProviderTab = ref<'qianwen' | 'dalle' | 'minimax' | 'volcengine'>('qianwen')
 
 // 表单数据：直接对齐后端字段，CORS 来源用逗号分隔字符串维护
 const form = reactive({
@@ -43,6 +44,11 @@ const form = reactive({
       modelImage: '',
     },
     minimax: {
+      apiKey: '',
+      baseUrl: '',
+      modelImage: '',
+    },
+    volcengine: {
       apiKey: '',
       baseUrl: '',
       modelImage: '',
@@ -68,7 +74,7 @@ const form = reactive({
   app: {
     logLevel: 'INFO',
     corsAllowedOrigins: '',
-    rateLimitFreeUserDailyLimit: 10,
+    rateLimitCreditCostPerConvert: 4,
     accessTokenExpireMinutes: 120,
   },
 })
@@ -85,6 +91,7 @@ const providerOptions = [
   { label: '千问 (DashScope)', value: 'qianwen' },
   { label: 'OpenAI (DALL-E)', value: 'dalle' },
   { label: 'MiniMax', value: 'minimax' },
+  { label: '火山引擎 (Seedream)', value: 'volcengine' },
 ]
 
 /** 加载当前系统配置 */
@@ -95,7 +102,7 @@ async function loadConfig() {
     fillForm(data)
     // 默认激活 tab 跟随 defaultProvider
     const dp = data.model.defaultProvider
-    if (dp === 'dalle' || dp === 'minimax' || dp === 'qianwen') {
+    if (dp === 'dalle' || dp === 'minimax' || dp === 'qianwen' || dp === 'volcengine') {
       activeProviderTab.value = dp
     }
   } catch {
@@ -111,6 +118,7 @@ function fillForm(data: SystemConfig) {
   form.model.qianwen = { ...data.model.qianwen }
   form.model.dalle = { ...data.model.dalle }
   form.model.minimax = { ...data.model.minimax }
+  form.model.volcengine = { ...data.model.volcengine }
 
   form.storage.storageType = data.storage.storageType
   form.storage.minio = { ...data.storage.minio }
@@ -118,7 +126,7 @@ function fillForm(data: SystemConfig) {
 
   form.app.logLevel = data.app.logLevel
   form.app.corsAllowedOrigins = data.app.corsAllowedOrigins.join(', ')
-  form.app.rateLimitFreeUserDailyLimit = data.app.rateLimitFreeUserDailyLimit
+  form.app.rateLimitCreditCostPerConvert = data.app.rateLimitCreditCostPerConvert
   form.app.accessTokenExpireMinutes = data.app.accessTokenExpireMinutes
 }
 
@@ -153,6 +161,13 @@ function buildPayload(): SystemConfigUpdate {
   if (mm.baseUrl) minimax.baseUrl = mm.baseUrl
   if (mm.modelImage) minimax.modelImage = mm.modelImage
   if (Object.keys(minimax).length > 0) model.minimax = minimax
+  // 火山引擎（Seedream）
+  const vc = form.model.volcengine
+  const volcengine: NonNullable<NonNullable<SystemConfigUpdate['model']>['volcengine']> = {}
+  if (vc.apiKey && !vc.apiKey.includes('****')) volcengine.apiKey = vc.apiKey
+  if (vc.baseUrl) volcengine.baseUrl = vc.baseUrl
+  if (vc.modelImage) volcengine.modelImage = vc.modelImage
+  if (Object.keys(volcengine).length > 0) model.volcengine = volcengine
   payload.model = model
 
   // 存储配置
@@ -189,7 +204,7 @@ function buildPayload(): SystemConfigUpdate {
     .map((s) => s.trim())
     .filter(Boolean)
   if (origins.length > 0) app.corsAllowedOrigins = origins
-  app.rateLimitFreeUserDailyLimit = form.app.rateLimitFreeUserDailyLimit
+  app.rateLimitCreditCostPerConvert = form.app.rateLimitCreditCostPerConvert
   app.accessTokenExpireMinutes = form.app.accessTokenExpireMinutes
   if (Object.keys(app).length > 0) payload.app = app
 
@@ -204,7 +219,7 @@ async function onSave() {
     const payload = buildPayload()
     const data = await adminApi.updateSystemConfig(payload)
     fillForm(data)
-    ElMessage.success('配置已写入 .env，请重启后端服务使新配置生效')
+    ElMessage.success('模型配置已立即生效，存储/应用配置需重启后端服务')
   } catch {
     // request 拦截器已提示错误
   } finally {
@@ -219,7 +234,7 @@ async function onReset() {
 }
 
 // ===================== 用户管理 =====================
-const activeTab = ref<'config' | 'users' | 'skills'>('config')
+const activeTab = ref<'config' | 'users' | 'skills' | 'feedbacks'>('config')
 
 const users = ref<AdminUserItem[]>([])
 const userTotal = ref(0)
@@ -472,6 +487,32 @@ onMounted(() => {
                   </el-form-item>
                 </div>
               </el-tab-pane>
+
+              <el-tab-pane label="火山引擎 (Seedream)" name="volcengine">
+                <div class="form-grid">
+                  <el-form-item label="API Key">
+                    <el-input
+                      v-model="form.model.volcengine.apiKey"
+                      placeholder="脱敏显示，如需修改请清空后输入新值"
+                      show-password
+                    />
+                    <div class="field-hint">敏感字段，保存时若仍含 **** 将跳过写入。在方舟平台获取 API Key</div>
+                  </el-form-item>
+                  <el-form-item label="接口基础地址">
+                    <el-input
+                      v-model="form.model.volcengine.baseUrl"
+                      placeholder="如 https://ark.cn-beijing.volces.com/api/plan/v3"
+                    />
+                  </el-form-item>
+                  <el-form-item label="图像生成模型">
+                    <el-input
+                      v-model="form.model.volcengine.modelImage"
+                      placeholder="如 seedream-5-0-pro"
+                    />
+                    <div class="field-hint">可选：seedream-5-0-pro / seedream-5-0-lite / seedream-4-5 / seedream-4-0</div>
+                  </el-form-item>
+                </div>
+              </el-tab-pane>
             </el-tabs>
           </section>
 
@@ -577,8 +618,8 @@ onMounted(() => {
                   placeholder="多个来源用英文逗号分隔"
                 />
               </el-form-item>
-              <el-form-item label="免费用户每日限额">
-                <el-input-number v-model="form.app.rateLimitFreeUserDailyLimit" :min="0" :max="1000" />
+              <el-form-item label="每次转换扣除积分">
+                <el-input-number v-model="form.app.rateLimitCreditCostPerConvert" :min="0" :max="1000" />
               </el-form-item>
               <el-form-item label="Access Token 过期时间（分钟）">
                 <el-input-number v-model="form.app.accessTokenExpireMinutes" :min="1" :max="10080" />
@@ -590,7 +631,7 @@ onMounted(() => {
           <div class="admin-actions">
             <div class="restart-tip">
               <span class="restart-tip__icon">!</span>
-              <span>配置写入 .env 后，需重启后端服务才能让新配置在内存中生效</span>
+              <span>模型配置保存到数据库立即生效；存储/应用配置写入 .env 后需重启后端服务</span>
             </div>
             <div class="admin-actions__btns">
               <el-button :disabled="saving" @click="onReset">重新加载</el-button>
@@ -670,6 +711,11 @@ onMounted(() => {
       <!-- 技能管理 -->
       <el-tab-pane label="技能管理" name="skills">
         <SkillManager />
+      </el-tab-pane>
+
+      <!-- 反馈管理 -->
+      <el-tab-pane label="反馈管理" name="feedbacks">
+        <FeedbackManager />
       </el-tab-pane>
     </el-tabs>
 
@@ -828,14 +874,40 @@ onMounted(() => {
   background-color: var(--color-primary);
 }
 
-/* 分区表单：复用 notebook-section 风格 */
+/* 分区表单：复用 notebook-section 风格 + 纸张质感 */
 .notebook-section {
+  position: relative;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 28px 36px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(156, 150, 139, 0.08),
+              inset 0 1px 0 rgba(250, 248, 243, 0.5);
   margin-bottom: 24px;
+  overflow: hidden;
+  animation: section-fade-in 0.5s ease-out backwards;
+}
+.notebook-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
+}
+.notebook-section:nth-child(2) { animation-delay: 0.1s; }
+.notebook-section:nth-child(3) { animation-delay: 0.2s; }
+
+@keyframes section-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .notebook-section__label {
   display: flex;

@@ -200,14 +200,44 @@ onBeforeUnmount(() => {
   padding: 16px;
 }
 .login-card {
+  position: relative;
   width: 100%;
   max-width: 380px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 40px 32px 32px;
-  box-shadow: var(--shadow-lg);
-  animation: ink-fade-up 0.5s ease-out both;
+  box-shadow: 0 16px 48px rgba(28, 28, 26, 0.1),
+              0 8px 20px rgba(28, 28, 26, 0.06),
+              inset 0 1px 0 rgba(250, 248, 243, 0.5);
+  overflow: hidden;
+  animation: ink-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* 纸张纹理 */
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
+}
+/* 朱砂装饰角标 */
+.login-card::after {
+  content: "";
+  position: absolute;
+  top: -32px;
+  right: -32px;
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(200, 68, 43, 0.08) 0%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  pointer-events: none;
 }
 /* 朱印：与页首一致的签名方印，带立体感 */
 .login-card__seal {

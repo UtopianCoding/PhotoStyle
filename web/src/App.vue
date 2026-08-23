@@ -44,7 +44,12 @@ async function onLogout() {
             class="app-nav__link"
             >交互</RouterLink
           >
-          <RouterLink to="/ip-sticker" class="app-nav__link">表情包</RouterLink>
+          <RouterLink
+            v-if="userStore.hasPermission('ip_sticker:view')"
+            to="/ip-sticker"
+            class="app-nav__link"
+            >表情包</RouterLink
+          >
           <RouterLink
             v-if="userStore.hasPermission('admin:access')"
             to="/admin"
@@ -63,7 +68,7 @@ async function onLogout() {
             </RouterLink>
 
             <el-dropdown trigger="click" @command="(c: string) => {
-              if (c === 'profile') profileVisible = true
+              if (c === 'profile') router.push('/profile')
               if (c === 'credits') router.push('/credits')
               if (c === 'logout') onLogout()
             }">
@@ -86,7 +91,7 @@ async function onLogout() {
                     <el-icon><Coin /></el-icon> 积分中心
                   </el-dropdown-item>
                   <el-dropdown-item command="profile">
-                    <el-icon><User /></el-icon> 个人资料
+                    <el-icon><User /></el-icon> 个人中心
                   </el-dropdown-item>
                   <el-dropdown-item command="logout" divided>
                     <el-icon><SwitchButton /></el-icon> 退出登录
@@ -112,7 +117,7 @@ async function onLogout() {
     <!-- 站脚 -->
     <SiteFooter />
 
-    <!-- 个人资料弹窗 -->
+    <!-- 个人资料弹窗（保留用于其他入口调用） -->
     <ProfileDialog v-model="profileVisible" />
   </div>
 </template>

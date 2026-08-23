@@ -33,6 +33,7 @@ const routes: RouteRecordRaw[] = [
     path: '/ip-sticker',
     name: 'IPSticker',
     component: () => import('@/views/IPSticker.vue'),
+    meta: { requiredPermission: 'ip_sticker:view' },
   },
   {
     path: '/login',
@@ -66,6 +67,13 @@ const routes: RouteRecordRaw[] = [
     path: '/credits',
     name: 'Credits',
     component: () => import('@/views/Credits.vue'),
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    // 个人中心页：照片管理、个人信息编辑、意见反馈
+    component: () => import('@/views/Profile.vue'),
+    meta: { requiredPermission: 'profile:view' },
   },
 ]
 

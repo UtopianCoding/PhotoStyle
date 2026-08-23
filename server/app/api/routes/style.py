@@ -6,7 +6,7 @@
 
 from fastapi import APIRouter, BackgroundTasks, status
 
-from app.api.deps import CurrentUser, StyleServiceDep
+from app.api.deps import CurrentUser, DBSession, StyleServiceDep
 from app.schemas.common import ApiResponse
 from app.schemas.style import (
     AnalyzeRequest,
@@ -83,3 +83,17 @@ async def cancel_task(
     """取消任务"""
     status_resp = await service.cancel_task(user.user_id, task_id)
     return ApiResponse.success(data=status_resp, message="任务已取消")
+
+
+@router.get("/public/tasks/{task_id}", response_model=ApiResponse[TaskStatusResponse])
+async def get_public_task_status(
+    task_id: str,
+    service: StyleServiceDep,
+) -> ApiResponse[TaskStatusResponse]:
+    """
+    公开查看任务结果（无需登录，用于分享海报扫码查看）。
+
+    仅返回任务状态和图片信息，不暴露用户敏感数据。
+    """
+    status_resp = await service.get_public_task_status(task_id)
+    return ApiResponse.success(data=status_resp)

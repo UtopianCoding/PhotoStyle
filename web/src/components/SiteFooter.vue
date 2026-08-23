@@ -42,8 +42,8 @@ const year = new Date().getFullYear()
           <ul class="site-footer__links">
             <li><RouterLink to="/contact">联系我们</RouterLink></li>
             <li>
-              <a href="mailto:hello@photostyle.app" class="site-footer__email">
-                hello@photostyle.app
+              <a href="mailto:utopiancoding@gmail.com" class="site-footer__email">
+                utopiancoding@gmail.com
               </a>
             </li>
           </ul>

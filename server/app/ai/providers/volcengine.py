@@ -57,12 +57,15 @@ class VolcengineProvider(ImageProvider):
         model = (request.model or cfg.get("model_image", "seedream-5-0-pro")).strip()
         prompt = request.prompt
         size = request.options.size or "2048x2048"
+        # 水印开关：默认关闭（false = 不添加「AI 生成」水印）
+        watermark = cfg.get("watermark", False)
 
         # 构建请求体
         body: dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "size": size,
+            "watermark": bool(watermark),
         }
 
         # 图生图：添加参考图片

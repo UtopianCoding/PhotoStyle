@@ -53,6 +53,7 @@ class VolcengineConfigRead(BaseModel):
     api_key: str = Field("", description="API Key（脱敏）")
     base_url: str
     model_image: str
+    watermark: bool = Field(False, description="是否在生成图片上添加 AI 水印")
 
 
 class ModelConfig(BaseModel):
@@ -176,6 +177,7 @@ class VolcengineConfigUpdate(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     model_image: str | None = None
+    watermark: bool | None = None
 
 
 class ModelConfigUpdate(BaseModel):

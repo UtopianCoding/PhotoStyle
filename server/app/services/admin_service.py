@@ -138,6 +138,7 @@ class AdminService:
                     api_key=mask_secret(vc.get("api_key", "")),
                     base_url=vc.get("base_url", ""),
                     model_image=vc.get("model_image", ""),
+                    watermark=vc.get("watermark", False),
                 ),
             ),
             # 存储 / 应用配置仍从 settings（.env）读取
@@ -256,6 +257,8 @@ class AdminService:
                 current["base_url"] = v.base_url
             if v.model_image is not None:
                 current["model_image"] = v.model_image
+            if v.watermark is not None:
+                current["watermark"] = v.watermark
             await store.save_provider_config("volcengine", _sanitize_config(current))
 
     # -------------------- 存储/应用配置写入 .env --------------------

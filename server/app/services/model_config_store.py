@@ -174,6 +174,7 @@ class ModelConfigStore:
                 "api_key": settings.volcengine.api_key.get_secret_value(),
                 "base_url": settings.volcengine.base_url,
                 "model_image": settings.volcengine.model_image,
+                "watermark": settings.volcengine.watermark,
             },
             "doubao": {
                 "access_key": settings.doubao.access_key.get_secret_value(),

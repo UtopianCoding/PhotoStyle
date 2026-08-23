@@ -188,9 +188,11 @@ class VolcengineConfig(BaseSettings):
     # 火山引擎 API Key（敏感信息，在方舟平台获取）
     api_key: SecretStr = SecretStr("")
     # 接口基础地址
-    base_url: str = "https://ark.cn-beijing.volces.com/api/plan/v3"
+    base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
     # 图像生成模型名（如 seedream-5-0-pro / seedream-5-0-lite / seedream-4-5 / seedream-4-0）
     model_image: str = "seedream-5-0-pro"
+    # 是否在生成图片右下角添加「AI 生成」水印（false = 不加水印）
+    watermark: bool = False
 
 
 # ============================================================

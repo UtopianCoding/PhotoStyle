@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 结果页：展示任务进度 / 原图与效果图左右两列对比 / 下载 / 收藏 / 分享
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Download, Share, Star, ZoomIn, Refresh, Picture, Loading } from '@element-plus/icons-vue'
@@ -82,6 +82,184 @@ const stageLabel = computed(() => {
   const stage = task.value?.stage ?? ''
   return STAGE_LABEL[stage] || '正在准备中…'
 })
+
+// 趣味话语库（按阶段分组，每 4 秒轮换）
+const FUN_MESSAGES: Record<string, string[]> = {
+  analyzing: [
+    '正在用放大镜观察你的照片…',
+    'AI 正在揣摩这张图的灵魂…',
+    '让我看看这里面有什么有趣的故事…',
+    '正在解析构图美学，请保持优雅的等待姿势…',
+    '据说好照片都有自己的气场，正在感应中…',
+    '正在数一数图片里有多少个像素点（开玩笑的）…',
+    'AI 正在做眼保健操，准备大显身手…',
+    '正在给这张照片做一次深度灵魂拷问…',
+    '构图分析中，请想象自己是卢浮宫的策展人…',
+    '正在用 AI 的第六感感受这张照片…',
+    '图片内容识别中，目前还没发现外星人…',
+    '正在为这张照片写一首小诗（AI 的文学梦）…',
+    '据说每张照片都藏着摄影师的小心思…',
+    '正在从 10 亿种风格里挑最适合你的那一种…',
+    'AI 正在翻遍美术史寻找灵感，请稍候…',
+    '正在分析光影关系，感觉像在看伦勃朗…',
+    '图片扫描完毕…哦等等，让我再看一眼…',
+    '正在计算这张照片的「好看指数」…',
+    'AI 说：这张照片有故事，我得多看看…',
+    '正在给照片做一次「美学体检」…',
+  ],
+  generating: [
+    'AI 画师正在蘸墨，马上就好…',
+    '正在为你施展魔法，请勿眨眼…',
+    '每一笔都是精心计算的艺术，不是随便画画的…',
+    '正在将平凡变为非凡，魔法进行中…',
+    'AI 正在燃烧它的 GPU 小脑瓜…',
+    '艺术创作中，请勿打扰大师的灵感…',
+    '如果 AI 有手的话，它现在一定画得很认真…',
+    '据说等待的时候摸摸屏幕会更快（并不会）…',
+    'GPU 正在疯狂运转，建议给它扇扇风…',
+    'AI 正在参考毕加索、梵高、莫奈的作品（大误）…',
+    '正在把你的照片变成朋友圈的点赞收割机…',
+    '据说多看几眼进度条，它就会跑得更快（玄学）…',
+    'AI 正在一边画画一边哼小曲（你听不到而已）…',
+    '这张图生成完后，AI 想请你给它打个五星好评…',
+    '正在调用全宇宙的算力，只为这张图（夸张了）…',
+    '艺术就是爆炸！——来自正在画画的 AI…',
+    '正在把「还行」变成「绝了」，请耐心等待…',
+    '据说盯着屏幕看会让 AI 紧张，建议去倒杯水…',
+    'AI 画师表示：这张图我很有感觉！',
+    '正在用神经网络为你编织一场视觉梦境…',
+    '正在说服 AI 不要把事情搞砸…',
+    '别想紫色的河马…啊不，别想别的，专注看进度条…',
+    '服务器由一颗柠檬和两根电极供电（大概）…',
+    '我发誓马上就好了…大概…可能…',
+    '正在确保所有的 i 都加了点，所有的 t 都加了横…',
+    '另一台服务器画得比这台快（开玩笑的）…',
+    '正在从无穷大开始倒数，别急…',
+    '不要慌…慌张只会让 GPU 更紧张…',
+    '独角兽就在这条路的尽头，我保证…',
+    '正在给蛋糕加上最后一层奶油，蛋糕不是谎言…',
+    '至少你没有在打客服电话排队…',
+    '正在转仓鼠轮发电中，请保持耐心…',
+    '好咖啡需要慢慢泡，好 AI 需要慢慢算…',
+    '正在施展「化腐朽为神奇」之术…',
+    'AI 说它需要一杯咖啡才能继续（它没有嘴）…',
+    '正在把像素重新排列成更好看的样子…',
+    '据说深呼吸三次，图就画好了（没有科学依据）…',
+    'AI 正在和灵感女神讨价还价…',
+    '别急，好东西从来不会准时出现，它们总是姗姗来迟…',
+    '正在为你创造一个让隔壁小孩都馋哭的效果…',
+    'GPU 正在画画，CPU 在旁边喊加油…',
+    'AI 刚刚偷偷打了个哈欠，现在精神多了…',
+    '正在用 0 和 1 编织一幅浮世绘…',
+    '据说等图的时候原地转三圈会更快（不要试）…',
+    'AI 正在翻字典找一个形容词来形容你的照片：绝！',
+    '正在把「普通」这个词从字典里删掉…',
+    '别催了别催了，AI 画师说再给它一分钟…',
+    '你的照片正在 undergoing 一场华丽的蜕变…',
+    'AI 正在给这张图注入灵魂，请准备接收…',
+    '据说在等的时候许个愿，出图会更好看（心理暗示）…',
+    '正在施展七十二变中的第八变：照片美颜术…',
+    'AI 正在用 4090 的算力思考人生，顺便帮你画图…',
+    '别急，AI 正在跟你的照片谈恋爱呢…',
+    '据说每个像素都在排队做造型，不要插队…',
+    'AI 画师说：这单我用心了，包你满意…',
+    '正在把滤镜调到你妈都认不出的程度（开玩笑的）…',
+    'GPU 温度已达 80°C，AI 表示：小意思…',
+    'AI 正在用毕加索的立体主义分析你的自拍…',
+    '据说看到这条消息的人，运气会变好一点点…',
+    '正在把「将就」升级为「讲究」，请稍候…',
+    'AI 正在给你的照片加一层「高级感」滤镜…',
+    '据说等图的时候吃点零食，时间会过得更快…',
+    '正在用神经网络模拟莫奈的笔触…',
+    'AI 说这张图的构图可以打 99 分，留 1 分怕你骄傲…',
+    '正在把「路人甲」变成「主角光环」…',
+    'GPU 正在全力运转，电费正在疯狂燃烧…',
+    'AI 正在用蒙德里安的几何美学重新构图…',
+    '据说看到进度条动了的人，今天会有好事发生…',
+    '正在给照片做一次「美学整容」，保证自然…',
+    'AI 画师正在调色调到手软，只为给你最完美的效果…',
+    '别急，正在把你的照片从「还行」升级到「惊艳」…',
+    '正在用达芬奇的黄金比例重新设计构图…',
+    'AI 说它正在用「心」画，不是用「芯」画（虽然确实是芯片）…',
+    '据说在等图的时候喝口水，出图会更水润…',
+    '正在把「随手一拍」变成「大片既视感」…',
+    'AI 正在用 100 层神经网络为你精雕细琢…',
+    '正在给照片加一点「氛围感」，马上就好…',
+    '据说等图的时候笑一笑，出图会更好看（玄学+1）…',
+    'AI 正在用「像素级」的耐心为你打磨每一个细节…',
+    '正在把「普普通通」变成「与众不同」，马上就好…',
+  ],
+  uploading: [
+    '正在将杰作送到云端保险箱…',
+    'AI 正在给你的作品盖上"完成"的印章…',
+    '正在为你的艺术品找一个永久的家…',
+    '最后的打包工作，马上就能拆快递了…',
+    '正在把这幅画小心翼翼地放进画框…',
+    'AI 画师正在做最后的签名…',
+    '正在为你的作品系上蝴蝶结…',
+    '上传中，每一比特都承载着艺术的重量…',
+    '正在把这幅画送到你的专属画廊…',
+    'AI 正在给作品贴上"易碎品，轻拿轻放"的标签…',
+    '正在为这幅杰作办理入住手续…',
+    'AI 画师正在擦拭画框上的最后一粒灰尘…',
+    '正在给你的作品办理"出生证明"…',
+    '最后一公里冲刺，马上到达终点…',
+    '正在把这幅画装进时光胶囊，永久保存…',
+    'AI 正在给你的作品喷上保护漆…',
+    '正在为你的艺术品安排一个C位…',
+    '上传进度条正在努力奔跑，不要催它…',
+    '正在把这幅画送到你的个人美术馆…',
+    'AI 画师正在做最后的质检：完美！',
+  ],
+  default: [
+    '好的作品值得等待，就像好酒需要陈酿…',
+    '正在努力中，请稍安勿躁…',
+    'AI 正在加班加点，只为给你惊喜…',
+    '等待是为了更好的相遇，比如遇见你的新头像…',
+    '正在后台默默耕耘，前台马上开花结果…',
+    '别着急，让子弹飞一会儿…',
+    'AI 正在用洪荒之力为你创作…',
+    '正在把"普通"变成"特别"，这需要一点时间…',
+    '据说等待的时候做几个深呼吸，时间会过得更快…',
+    'AI 正在用魔法棒点石成金，请稍等片刻…',
+    '耐心等待是一种美德，而你正在践行它…',
+    '正在为你准备一份视觉大餐，马上上菜…',
+    'AI 说：好东西不怕等，我怕你等太久…',
+    '正在把"随便拍拍"变成"精心制作"…',
+    '据说看到这条的人，今天会有好事发生…',
+    'AI 正在全力以赴，不辜负你的等待…',
+    '正在为你的照片注入灵魂，请稍等…',
+    '别急，AI 正在和灵感女神开会讨论…',
+    '正在把平凡变成非凡，这需要一点魔法时间…',
+    'AI 画师说：慢工出细活，我在用心画…',
+  ],
+}
+
+const funMsgIndex = ref(0)
+let funMsgTimer: ReturnType<typeof setInterval> | null = null
+const currentStage = computed(() => task.value?.stage ?? '')
+const funMessages = computed(() => FUN_MESSAGES[currentStage.value] ?? FUN_MESSAGES.default)
+const funMessage = computed(() => funMessages.value[funMsgIndex.value % funMessages.value.length])
+
+function startFunMsgRotation() {
+  funMsgIndex.value = Math.floor(Math.random() * funMessages.value.length)
+  funMsgTimer = setInterval(() => {
+    funMsgIndex.value = (funMsgIndex.value + 1) % funMessages.value.length
+  }, 4000)
+}
+
+function stopFunMsgRotation() {
+  if (funMsgTimer) {
+    clearInterval(funMsgTimer)
+    funMsgTimer = null
+  }
+}
+
+// 阶段切换时重置趣味话语
+watch(currentStage, () => {
+  stopFunMsgRotation()
+  startFunMsgRotation()
+})
 // 原图地址（从任务状态接口读取，不依赖首页上传态）
 const originalUrl = computed(() => task.value?.originalUrl ?? '')
 // 结果图地址（取第一个结果）
@@ -102,10 +280,12 @@ const previewInitialIndex = ref(0)
 
 onMounted(() => {
   start()
+  startFunMsgRotation()
 })
 
 onUnmounted(() => {
   stop()
+  stopFunMsgRotation()
 })
 
 /** 点击效果图预览 */
@@ -239,6 +419,7 @@ function goBack() {
         class="progress-card__bar"
       />
       <p class="progress-card__stage">{{ stageLabel }}</p>
+      <p :key="funMsgIndex" class="progress-card__fun-msg">{{ funMessage }}</p>
       <p class="progress-card__hint">预计需要 30~60 秒，请耐心等待</p>
     </div>
 
@@ -476,6 +657,20 @@ function goBack() {
   font-size: 13px;
   color: var(--color-text-secondary);
   letter-spacing: 0.04em;
+}
+.progress-card__fun-msg {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--color-primary);
+  font-style: italic;
+  letter-spacing: 0.03em;
+  min-height: 1.5em;
+  animation: fun-msg-fade 0.6s ease-in-out;
+}
+
+@keyframes fun-msg-fade {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 /* ====== 转换动画区域 ====== */

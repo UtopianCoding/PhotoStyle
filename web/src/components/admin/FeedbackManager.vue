@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listFeedbacks,
@@ -38,9 +38,6 @@ const statusTagMap: Record<string, { label: string; type: 'success' | 'warning' 
   resolved: { label: '已解决', type: 'success' },
   closed: { label: '已关闭', type: 'info' },
 }
-
-// 计算属性
-const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
 
 // 加载反馈列表
 async function loadFeedbacks() {

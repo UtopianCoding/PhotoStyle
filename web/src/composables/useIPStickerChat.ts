@@ -246,7 +246,7 @@ export function useIPStickerChat() {
         // 重绘后，找到最后一个 image_grid 消息，就地替换对应的贴纸
         messages.value = messages.value.filter((m) => m.type !== 'image_generating')
         const oldId = msg.payload.old_sticker_id as string
-        const newImage = msg.payload.new_image as DisplayMessage['images'] extends (infer T)[] ? T : never
+        const newImage = msg.payload.new_image as Record<string, unknown>
         if (newImage) {
           for (let i = messages.value.length - 1; i >= 0; i--) {
             if (messages.value[i].type === 'image_grid' && messages.value[i].images) {

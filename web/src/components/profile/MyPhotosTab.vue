@@ -107,7 +107,7 @@ onMounted(() => {
               <span class="info-label">上传时间</span>
               <span class="info-value">{{ formatDate(image.createdAt) }}</span>
             </div>
-            <div v-if="image.compressed" class="info-row">
+            <div v-if="image.compressed && image.compressedRatio != null" class="info-row">
               <span class="info-label">已压缩</span>
               <span class="info-value info-value--compressed">{{ ((1 - image.compressedRatio) * 100).toFixed(0) }}%</span>
             </div>

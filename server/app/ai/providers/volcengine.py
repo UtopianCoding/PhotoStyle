@@ -56,17 +56,29 @@ class VolcengineProvider(ImageProvider):
             base_url = base_url[: -len("/images/generations")]
         model = (request.model or cfg.get("model_image", "seedream-5-0-pro")).strip()
         prompt = request.prompt
-        size = request.options.size or "2048x2048"
-        # 水印开关：默认关闭（false = 不添加「AI 生成」水印）
-        watermark = cfg.get("watermark", False)
+        # 尺寸优先级：配置 width/height > options.size > 默认 2048x2048
+        cfg_width = cfg.get("width")
+        cfg_height = cfg.get("height")
+        if cfg_width and cfg_height:
+            size = f"{int(cfg_width)}x{int(cfg_height)}"
+        else:
+            size = request.options.size or "2048x2048"
+        # 可选参数：水印、种子（为空则不传）
+        cfg_watermark = cfg.get("watermark")
+        cfg_seed = cfg.get("seed")
 
         # 构建请求体
         body: dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "size": size,
-            "watermark": bool(watermark),
         }
+        # 水印：仅在明确设置时传入
+        if cfg_watermark is not None:
+            body["watermark"] = bool(cfg_watermark)
+        # 随机种子：仅在明确设置时传入
+        if cfg_seed is not None:
+            body["seed"] = int(cfg_seed)
 
         # 图生图：添加参考图片
         if request.image_url:
@@ -80,8 +92,8 @@ class VolcengineProvider(ImageProvider):
             body["image"] = [request.image_url] + request.reference_images
 
         logger.info(
-            "[火山引擎图像生成] 调用参数: model=%s, size=%s, has_image=%s, ref_images=%d, prompt=%s",
-            model, size, bool(request.image_url), len(request.reference_images), prompt[:200],
+            "[火山引擎图像生成] 调用参数: model=%s, size=%s, watermark=%s, seed=%s, has_image=%s, ref_images=%d, prompt=%s",
+            model, size, cfg_watermark, cfg_seed, bool(request.image_url), len(request.reference_images), prompt[:200],
         )
 
         headers = {

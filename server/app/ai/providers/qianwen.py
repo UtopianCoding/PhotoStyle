@@ -62,10 +62,19 @@ class QianwenProvider(ImageProvider):
 
         # 模型名统一小写
         model = (request.model or cfg.get("model_image", "qwen-image-3.0-pro")).lower()
-        size = request.options.size or get_image_size(request.options.ratio)
+        # 尺寸优先级：配置 width/height > options.size > ratio 默认映射
+        cfg_width = cfg.get("width")
+        cfg_height = cfg.get("height")
+        if cfg_width and cfg_height:
+            size = f"{cfg_width}*{cfg_height}"
+        else:
+            size = request.options.size or get_image_size(request.options.ratio)
         n = request.options.num_results
         workspace_id = cfg.get("workspace_id", "")
         region = cfg.get("region", "cn-beijing")
+        # 可选参数：水印、种子（为空则不传）
+        cfg_watermark = cfg.get("watermark")
+        cfg_seed = cfg.get("seed")
 
         # 设置 base URL
         # 如果配置了 Workspace ID，使用专属端点；否则使用共享 DashScope 端点
@@ -107,19 +116,29 @@ class QianwenProvider(ImageProvider):
         messages = [{"role": "user", "content": content}]
 
         logger.info(
-            "[千问图像生成] 调用参数: model=%s, size=%s, n=%s, has_image=%s, ref_images=%d, prompt=%s",
-            model, size, n, bool(request.image_url), len(request.reference_images), prompt[:200],
+            "[千问图像生成] 调用参数: model=%s, size=%s, n=%s, watermark=%s, seed=%s, has_image=%s, ref_images=%d, prompt=%s",
+            model, size, n, cfg_watermark, cfg_seed, bool(request.image_url), len(request.reference_images), prompt[:200],
         )
         logger.debug("[千问图像生成] 完整 messages: %s", json.dumps(messages, ensure_ascii=False, default=str))
 
         start_time = time.time()
 
         try:
+            # 构建额外参数（仅在有值时传入）
+            extra_kwargs: dict[str, Any] = {
+                "prompt_extend": False,  # VL 分析已生成精准提示词，无需模型自动扩展
+                "size": size,
+            }
+            if cfg_watermark is not None:
+                extra_kwargs["watermark"] = bool(cfg_watermark)
+            if cfg_seed is not None:
+                extra_kwargs["seed"] = int(cfg_seed)
+
             response = MultiModalConversation.call(
                 api_key=api_key,
                 model=model,
                 messages=messages,
-                prompt_extend=False,  # VL 分析已生成精准提示词，无需模型自动扩展（节省耗时与 token）
+                **extra_kwargs,
             )
         except Exception as exc:
             elapsed = time.time() - start_time

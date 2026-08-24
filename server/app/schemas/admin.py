@@ -23,6 +23,10 @@ class DashScopeConfigRead(BaseModel):
     model_image: str
     workspace_id: str
     region: str
+    watermark: bool | None = Field(None, description="是否添加水印（None=不设置）")
+    width: int | None = Field(None, description="图片宽度（像素），为空时不设置")
+    height: int | None = Field(None, description="图片高度（像素），为空时不设置")
+    seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
 
 
 class OpenAIConfigRead(BaseModel):
@@ -43,7 +47,10 @@ class MinimaxConfigRead(BaseModel):
     api_key: str = Field("", description="API Key（脱敏）")
     base_url: str
     model_image: str
-    watermark: bool = Field(False, description="是否在生成图片上添加 AI 水印")
+    watermark: bool | None = Field(None, description="是否添加 AI 水印（None=不设置）")
+    width: int | None = Field(None, description="图片宽度（像素，512-2048 且为 8 的倍数），为空时不设置")
+    height: int | None = Field(None, description="图片高度（像素，512-2048 且为 8 的倍数），为空时不设置")
+    seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
 
 
 class VolcengineConfigRead(BaseModel):
@@ -54,7 +61,10 @@ class VolcengineConfigRead(BaseModel):
     api_key: str = Field("", description="API Key（脱敏）")
     base_url: str
     model_image: str
-    watermark: bool = Field(False, description="是否在生成图片上添加 AI 水印")
+    watermark: bool | None = Field(None, description="是否添加 AI 水印（None=不设置）")
+    width: int | None = Field(None, description="图片宽度（像素），为空时不设置")
+    height: int | None = Field(None, description="图片高度（像素），为空时不设置")
+    seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
 
 
 class ModelConfig(BaseModel):
@@ -62,7 +72,7 @@ class ModelConfig(BaseModel):
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao / volcengine
+    # 默认图像生成 Provider ID：qianwen / dalle / minimax / volcengine
     default_provider: str
     # 启用的 Provider 列表（多模型并行转换）
     enabled_providers: list[str] = Field(default_factory=lambda: ["qianwen"], description="启用的 Provider ID 列表")
@@ -150,6 +160,10 @@ class DashScopeConfigUpdate(BaseModel):
     model_image: str | None = None
     workspace_id: str | None = None
     region: str | None = None
+    watermark: bool | None = None
+    width: int | None = None
+    height: int | None = None
+    seed: int | None = None
 
 
 class OpenAIConfigUpdate(BaseModel):
@@ -171,6 +185,9 @@ class MinimaxConfigUpdate(BaseModel):
     base_url: str | None = None
     model_image: str | None = None
     watermark: bool | None = None
+    width: int | None = None
+    height: int | None = None
+    seed: int | None = None
 
 
 class VolcengineConfigUpdate(BaseModel):
@@ -182,6 +199,9 @@ class VolcengineConfigUpdate(BaseModel):
     base_url: str | None = None
     model_image: str | None = None
     watermark: bool | None = None
+    width: int | None = None
+    height: int | None = None
+    seed: int | None = None
 
 
 class ModelConfigUpdate(BaseModel):

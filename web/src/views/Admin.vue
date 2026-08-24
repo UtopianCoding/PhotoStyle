@@ -38,6 +38,10 @@ const form = reactive({
       modelImage: '',
       workspaceId: '',
       region: '',
+      watermark: null as boolean | null,
+      width: null as number | null,
+      height: null as number | null,
+      seed: null as number | null,
     },
     dalle: {
       apiKey: '',
@@ -48,13 +52,19 @@ const form = reactive({
       apiKey: '',
       baseUrl: '',
       modelImage: '',
-      watermark: false,
+      watermark: null as boolean | null,
+      width: null as number | null,
+      height: null as number | null,
+      seed: null as number | null,
     },
     volcengine: {
       apiKey: '',
       baseUrl: '',
       modelImage: '',
-      watermark: false,
+      watermark: null as boolean | null,
+      width: null as number | null,
+      height: null as number | null,
+      seed: null as number | null,
     },
   },
   storage: {
@@ -153,6 +163,10 @@ function buildPayload(): SystemConfigUpdate {
   if (ds.modelImage) qianwen.modelImage = ds.modelImage
   qianwen.workspaceId = ds.workspaceId
   if (ds.region) qianwen.region = ds.region
+  qianwen.watermark = ds.watermark
+  qianwen.width = ds.width
+  qianwen.height = ds.height
+  qianwen.seed = ds.seed
   if (Object.keys(qianwen).length > 0) model.qianwen = qianwen
   // OpenAI / DALL-E
   const op = form.model.dalle
@@ -168,6 +182,9 @@ function buildPayload(): SystemConfigUpdate {
   if (mm.baseUrl) minimax.baseUrl = mm.baseUrl
   if (mm.modelImage) minimax.modelImage = mm.modelImage
   minimax.watermark = mm.watermark
+  minimax.width = mm.width
+  minimax.height = mm.height
+  minimax.seed = mm.seed
   if (Object.keys(minimax).length > 0) model.minimax = minimax
   // 火山引擎（Seedream）
   const vc = form.model.volcengine
@@ -176,6 +193,9 @@ function buildPayload(): SystemConfigUpdate {
   if (vc.baseUrl) volcengine.baseUrl = vc.baseUrl
   if (vc.modelImage) volcengine.modelImage = vc.modelImage
   volcengine.watermark = vc.watermark
+  volcengine.width = vc.width
+  volcengine.height = vc.height
+  volcengine.seed = vc.seed
   if (Object.keys(volcengine).length > 0) model.volcengine = volcengine
   payload.model = model
 
@@ -469,6 +489,20 @@ onMounted(() => {
                   <el-form-item label="区域">
                     <el-input v-model="form.model.qianwen.region" placeholder="如 cn-beijing" />
                   </el-form-item>
+                  <el-form-item label="AI 水印">
+                    <el-switch v-model="form.model.qianwen.watermark" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
+                    <div class="field-hint">开启后将在生成图片上添加水印，留空则不设置</div>
+                  </el-form-item>
+                  <el-form-item label="图片宽度（像素）">
+                    <el-input-number v-model="form.model.qianwen.width" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
+                  </el-form-item>
+                  <el-form-item label="图片高度（像素）">
+                    <el-input-number v-model="form.model.qianwen.height" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
+                  </el-form-item>
+                  <el-form-item label="随机数种子">
+                    <el-input-number v-model="form.model.qianwen.seed" :min="0" :max="2147483647" controls-position="right" placeholder="留空使用随机种子" />
+                    <div class="field-hint">固定种子可使生成结果相对稳定</div>
+                  </el-form-item>
                 </div>
               </el-tab-pane>
 
@@ -508,8 +542,20 @@ onMounted(() => {
                     <el-input v-model="form.model.minimax.modelImage" placeholder="如 image-01 / image-01-live" />
                   </el-form-item>
                   <el-form-item label="AI 水印">
-                    <el-switch v-model="form.model.minimax.watermark" active-text="开启" inactive-text="关闭" />
-                    <div class="field-hint">开启后将在生成图片右下角添加「AI 生成」水印</div>
+                    <el-switch v-model="form.model.minimax.watermark" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
+                    <div class="field-hint">开启后将在生成图片上添加「AI 生成」水印</div>
+                  </el-form-item>
+                  <el-form-item label="图片宽度（像素）">
+                    <el-input-number v-model="form.model.minimax.width" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
+                    <div class="field-hint">取值范围 512-2048，且必须是 8 的倍数</div>
+                  </el-form-item>
+                  <el-form-item label="图片高度（像素）">
+                    <el-input-number v-model="form.model.minimax.height" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
+                    <div class="field-hint">取值范围 512-2048，且必须是 8 的倍数</div>
+                  </el-form-item>
+                  <el-form-item label="随机数种子">
+                    <el-input-number v-model="form.model.minimax.seed" :min="0" controls-position="right" placeholder="留空使用随机种子" />
+                    <div class="field-hint">固定种子可使生成结果相对稳定</div>
                   </el-form-item>
                 </div>
               </el-tab-pane>
@@ -538,8 +584,18 @@ onMounted(() => {
                     <div class="field-hint">可选：seedream-5-0-pro / seedream-5-0-lite / seedream-4-5 / seedream-4-0</div>
                   </el-form-item>
                   <el-form-item label="AI 水印">
-                    <el-switch v-model="form.model.volcengine.watermark" active-text="开启" inactive-text="关闭" />
+                    <el-switch v-model="form.model.volcengine.watermark" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
                     <div class="field-hint">开启后将在生成图片右下角添加「AI 生成」水印</div>
+                  </el-form-item>
+                  <el-form-item label="图片宽度（像素）">
+                    <el-input-number v-model="form.model.volcengine.width" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
+                  </el-form-item>
+                  <el-form-item label="图片高度（像素）">
+                    <el-input-number v-model="form.model.volcengine.height" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
+                  </el-form-item>
+                  <el-form-item label="随机数种子">
+                    <el-input-number v-model="form.model.volcengine.seed" :min="0" controls-position="right" placeholder="留空使用随机种子" />
+                    <div class="field-hint">固定种子可使生成结果相对稳定</div>
                   </el-form-item>
                 </div>
               </el-tab-pane>

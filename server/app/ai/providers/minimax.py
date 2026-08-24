@@ -62,24 +62,37 @@ class MinimaxProvider(ImageProvider):
 
         model = (request.model or cfg.get("model_image", "image-01")).strip()
         prompt = request.prompt
-        # 水印开关：默认关闭
-        watermark = cfg.get("watermark", False)
+        # 可选参数：水印、宽高、种子（为空则不传）
+        cfg_watermark = cfg.get("watermark")
+        cfg_width = cfg.get("width")
+        cfg_height = cfg.get("height")
+        cfg_seed = cfg.get("seed")
 
         # 构建请求体
         body: dict[str, Any] = {
             "model": model,
             "prompt": prompt,
             "response_format": "url",
-            "aigc_watermark": bool(watermark),
         }
+        # 水印：仅在明确设置时传入
+        if cfg_watermark is not None:
+            body["aigc_watermark"] = bool(cfg_watermark)
 
-        # 宽高比：从 options.ratio 映射（仅使用 MiniMax 支持的值）
-        ratio = request.options.ratio or "1:1"
-        if ratio in _VALID_ASPECT_RATIOS:
-            body["aspect_ratio"] = ratio
+        # 尺寸：配置 width/height 优先，否则使用 ratio
+        if cfg_width and cfg_height:
+            # MiniMax API: aspect_ratio 优先于 width/height，所以使用自定义宽高时不传 aspect_ratio
+            body["width"] = int(cfg_width)
+            body["height"] = int(cfg_height)
         else:
-            # 默认使用 1:1
-            body["aspect_ratio"] = "1:1"
+            ratio = request.options.ratio or "1:1"
+            if ratio in _VALID_ASPECT_RATIOS:
+                body["aspect_ratio"] = ratio
+            else:
+                body["aspect_ratio"] = "1:1"
+
+        # 随机种子：仅在明确设置时传入
+        if cfg_seed is not None:
+            body["seed"] = int(cfg_seed)
 
         # 生成数量
         n = request.options.num_results
@@ -99,9 +112,9 @@ class MinimaxProvider(ImageProvider):
             ]
 
         logger.info(
-            "[MiniMax图像生成] 调用参数: model=%s, aspect_ratio=%s, n=%s, "
+            "[MiniMax图像生成] 调用参数: model=%s, aspect_ratio=%s, width=%s, height=%s, seed=%s, n=%s, "
             "has_image=%s, ref_images=%d, prompt=%s",
-            model, body.get("aspect_ratio"), body.get("n", 1),
+            model, body.get("aspect_ratio"), body.get("width"), body.get("height"), body.get("seed"), body.get("n", 1),
             bool(request.image_url), len(request.reference_images), prompt[:200],
         )
 

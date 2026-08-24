@@ -244,6 +244,10 @@ export interface DashScopeConfig {
   modelImage: string
   workspaceId: string
   region: string
+  watermark: boolean | null
+  width: number | null
+  height: number | null
+  seed: number | null
 }
 
 /**
@@ -262,7 +266,10 @@ export interface MinimaxConfig {
   apiKey: string
   baseUrl: string
   modelImage: string
-  watermark: boolean
+  watermark: boolean | null
+  width: number | null
+  height: number | null
+  seed: number | null
 }
 
 /**
@@ -272,7 +279,10 @@ export interface VolcengineConfig {
   apiKey: string
   baseUrl: string
   modelImage: string
-  watermark: boolean
+  watermark: boolean | null
+  width: number | null
+  height: number | null
+  seed: number | null
 }
 
 /**
@@ -353,6 +363,10 @@ export interface SystemConfigUpdate {
       modelImage?: string
       workspaceId?: string
       region?: string
+      watermark?: boolean | null
+      width?: number | null
+      height?: number | null
+      seed?: number | null
     }
     dalle?: {
       apiKey?: string
@@ -363,13 +377,19 @@ export interface SystemConfigUpdate {
       apiKey?: string
       baseUrl?: string
       modelImage?: string
-      watermark?: boolean
+      watermark?: boolean | null
+      width?: number | null
+      height?: number | null
+      seed?: number | null
     }
     volcengine?: {
       apiKey?: string
       baseUrl?: string
       modelImage?: string
-      watermark?: boolean
+      watermark?: boolean | null
+      width?: number | null
+      height?: number | null
+      seed?: number | null
     }
   }
   storage?: {

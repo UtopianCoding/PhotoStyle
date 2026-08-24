@@ -124,6 +124,10 @@ class AdminService:
                     model_image=qw.get("model_image", ""),
                     workspace_id=qw.get("workspace_id", ""),
                     region=qw.get("region", ""),
+                    watermark=qw.get("watermark"),
+                    width=qw.get("width"),
+                    height=qw.get("height"),
+                    seed=qw.get("seed"),
                 ),
                 dalle=OpenAIConfigRead(
                     api_key=mask_secret(dl.get("api_key", "")),
@@ -134,13 +138,19 @@ class AdminService:
                     api_key=mask_secret(mm.get("api_key", "")),
                     base_url=mm.get("base_url", ""),
                     model_image=mm.get("model_image", ""),
-                    watermark=mm.get("watermark", False),
+                    watermark=mm.get("watermark"),
+                    width=mm.get("width"),
+                    height=mm.get("height"),
+                    seed=mm.get("seed"),
                 ),
                 volcengine=VolcengineConfigRead(
                     api_key=mask_secret(vc.get("api_key", "")),
                     base_url=vc.get("base_url", ""),
                     model_image=vc.get("model_image", ""),
-                    watermark=vc.get("watermark", False),
+                    watermark=vc.get("watermark"),
+                    width=vc.get("width"),
+                    height=vc.get("height"),
+                    seed=vc.get("seed"),
                 ),
             ),
             # 存储 / 应用配置仍从 settings（.env）读取
@@ -227,6 +237,14 @@ class AdminService:
                 current["workspace_id"] = d.workspace_id
             if d.region is not None:
                 current["region"] = d.region
+            if d.watermark is not None:
+                current["watermark"] = d.watermark
+            if d.width is not None:
+                current["width"] = d.width
+            if d.height is not None:
+                current["height"] = d.height
+            if d.seed is not None:
+                current["seed"] = d.seed
             await store.save_provider_config("qianwen", _sanitize_config(current))
 
         # OpenAI / DALL-E
@@ -253,6 +271,12 @@ class AdminService:
                 current["model_image"] = m.model_image
             if m.watermark is not None:
                 current["watermark"] = m.watermark
+            if m.width is not None:
+                current["width"] = m.width
+            if m.height is not None:
+                current["height"] = m.height
+            if m.seed is not None:
+                current["seed"] = m.seed
             await store.save_provider_config("minimax", _sanitize_config(current))
 
         # 火山引擎（Seedream）
@@ -267,6 +291,12 @@ class AdminService:
                 current["model_image"] = v.model_image
             if v.watermark is not None:
                 current["watermark"] = v.watermark
+            if v.width is not None:
+                current["width"] = v.width
+            if v.height is not None:
+                current["height"] = v.height
+            if v.seed is not None:
+                current["seed"] = v.seed
             await store.save_provider_config("volcengine", _sanitize_config(current))
 
     # -------------------- 存储/应用配置写入 .env --------------------

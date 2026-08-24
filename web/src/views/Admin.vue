@@ -42,6 +42,8 @@ const form = reactive({
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
+      timeout: null as number | null,
+      promptExtend: null as boolean | null,
     },
     dalle: {
       apiKey: '',
@@ -131,7 +133,12 @@ function fillForm(data: SystemConfig) {
   form.model.enabledProviders = data.model.enabledProviders?.length
     ? [...data.model.enabledProviders]
     : ['qianwen']
-  form.model.qianwen = { ...data.model.qianwen }
+  form.model.qianwen = {
+    ...data.model.qianwen,
+    // 兼容旧版本后端未返回这两个字段的情况
+    timeout: data.model.qianwen.timeout ?? null,
+    promptExtend: data.model.qianwen.promptExtend ?? true,
+  }
   form.model.dalle = { ...data.model.dalle }
   form.model.minimax = { ...data.model.minimax }
   form.model.volcengine = { ...data.model.volcengine }
@@ -167,6 +174,10 @@ function buildPayload(): SystemConfigUpdate {
   qianwen.width = ds.width
   qianwen.height = ds.height
   qianwen.seed = ds.seed
+  // timeout：空输入框（null）→ 0，后端将 0 视为"删除字段，恢复默认 300"
+  qianwen.timeout = ds.timeout ?? 0
+  // promptExtend：始终发送 true/false，后端视为"覆盖写入"
+  qianwen.promptExtend = ds.promptExtend ?? true
   if (Object.keys(qianwen).length > 0) model.qianwen = qianwen
   // OpenAI / DALL-E
   const op = form.model.dalle
@@ -502,6 +513,14 @@ onMounted(() => {
                   <el-form-item label="随机数种子">
                     <el-input-number v-model="form.model.qianwen.seed" :min="0" :max="2147483647" controls-position="right" placeholder="留空使用随机种子" />
                     <div class="field-hint">固定种子可使生成结果相对稳定</div>
+                  </el-form-item>
+                  <el-form-item label="请求超时（秒）">
+                    <el-input-number v-model="form.model.qianwen.timeout" :min="30" :max="1800" :step="30" controls-position="right" placeholder="默认 300" />
+                    <div class="field-hint">单次调用千问模型的最大等待时间（30~1800 秒），留空则使用默认 300 秒</div>
+                  </el-form-item>
+                  <el-form-item label="提示词自动扩展">
+                    <el-switch v-model="form.model.qianwen.promptExtend" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
+                    <div class="field-hint">启用后千问会自动优化提示词（长提示词建议关闭以避免超时）</div>
                   </el-form-item>
                 </div>
               </el-tab-pane>

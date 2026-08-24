@@ -740,16 +740,162 @@ class StyleService:
 
         # 判断是否使用多模型并行模式
         use_multi = not task.provider  # 空字符串表示使用全局启用的全部模型
-        multi_results: list[tuple[str, Any]] = []  # [(provider_id, response), ...]
+        # 记录所有任务涉及的 Provider 列表
+        task_providers: list[str] = []
 
-        try:
-            if use_multi:
-                # 多模型并行模式
-                multi_results = await self.provider_manager.generate_multi(provider_request)
-                logger.info("[风格转换] 阶段3: 多 Provider 返回, task_id=%s, providers=%d",
-                           task.task_id, len(multi_results))
-            else:
-                # 单模型模式（向后兼容）
+        # 用于收集后台持久化所需的数据
+        result_records: list[tuple[str, str]] = []  # (result_id, provider_url)
+        analysis_json_str = json.dumps(analysis, ensure_ascii=False) if analysis else None
+        first_result_recorded = False
+        credit_cost = settings.rate_limit.credit_cost_per_convert
+
+        if use_multi:
+            # ========= 多模型并行模式：逐个完成、逐个写库 =========
+            enabled = model_config_store.get_enabled_providers()
+            logger.info("[风格转换] 多模型模式: enabled_providers=%s, task_id=%s", enabled, task.task_id)
+            available_pids: list[str] = []
+            for pid in enabled:
+                p = self.provider_manager.get_provider(pid)
+                if p and p.is_available():
+                    available_pids.append(pid)
+                else:
+                    logger.warning("Provider [%s] 不可用，跳过 (provider=%s, available=%s)",
+                                  pid, p is not None, p.is_available() if p else False)
+
+            if not available_pids:
+                raise AIServiceException("无可用的 Provider")
+
+            task_providers = list(available_pids)
+            pending_pids = set(available_pids)
+            total = len(available_pids)
+            completed_count = 0
+            errors: list[str] = []
+
+            # 缓存 task 的关键属性，避免 commit() 后属性过期导致后续迭代失败
+            _task_id = task.task_id
+            _user_id = task.user_id
+            _image_id = task.image_id
+            _skill_id = task.skill_id
+            _task_provider = task.provider
+            _extra_prompt = task.extra_prompt
+
+            # 并发启动所有 Provider
+            async def _call(pid: str):
+                provider = self.provider_manager.get_provider(pid)
+                logger.info("[风格转换] 开始调用 Provider [%s], task_id=%s", pid, task.task_id)
+                try:
+                    resp = await provider.generate_image(provider_request)
+                    return pid, resp, None
+                except Exception as exc:
+                    logger.warning("[风格转换] Provider [%s] 调用异常: %s, task_id=%s", pid, exc, task.task_id)
+                    return pid, None, str(exc)
+
+            tasks_async = [asyncio.create_task(_call(pid)) for pid in available_pids]
+            logger.info("[风格转换] 已创建 %d 个并发任务: %s, task_id=%s",
+                       len(tasks_async), available_pids, task.task_id)
+
+            for coro in asyncio.as_completed(tasks_async):
+                pid, resp, err = await coro
+                completed_count += 1
+                pending_pids.discard(pid)
+                duration_ms = int((time.monotonic() - started_at) * 1000)
+
+                # 更新进度（让前端轮询时看到进展）
+                progress = 40 + int(30 * completed_count / total)
+                await self.repo.update_task_status(
+                    _task_id,
+                    stage="generating",
+                    progress=progress,
+                )
+                await self.db.flush()
+
+                provider_cfg = model_config_store.get_config(pid) or {}
+                provider_request_data = {
+                    **base_request_data,
+                    "provider_config": {
+                        "model": provider_cfg.get("model_image", ""),
+                        "base_url": provider_cfg.get("base_url", ""),
+                        "watermark": provider_cfg.get("watermark"),
+                        "width": provider_cfg.get("width"),
+                        "height": provider_cfg.get("height"),
+                        "seed": provider_cfg.get("seed"),
+                    },
+                }
+
+                if resp and resp.status == "success" and resp.results:
+                    logger.info("[风格转换] Provider [%s] 完成 (%d/%d), task_id=%s",
+                               pid, completed_count, total, _task_id)
+                    # 立即写入结果记录
+                    provider_resp_str = json.dumps(
+                        resp.raw_response or {}, ensure_ascii=False, default=str
+                    )
+                    for r in resp.results:
+                        rid = uuid.uuid4().hex
+                        credits_for_this = credit_cost if not first_result_recorded else 0
+                        first_result_recorded = True
+                        await self.repo.create_result(
+                            result_id=rid,
+                            task_id=_task_id,
+                            user_id=_user_id,
+                            image_id=_image_id,
+                            skill_id=_skill_id,
+                            provider=pid,
+                            result_url=r.url,
+                            thumbnail_url=None,
+                            prompt_used=prompt,
+                            analysis_json=analysis_json_str,
+                            provider_response=provider_resp_str,
+                            favorite=False,
+                            credits_used=credits_for_this,
+                        )
+                        result_records.append((rid, r.url))
+
+                    # 记录成功的模型交互
+                    await self._record_interaction(
+                        task=task,
+                        image_url=image_url,
+                        prompt=prompt,
+                        extra_prompt=_extra_prompt,
+                        feedback=feedback,
+                        options=options,
+                        status="success",
+                        output_image_urls=[r.url for r in resp.results],
+                        provider_response=resp.raw_response,
+                        duration_ms=duration_ms,
+                        provider_override=pid,
+                        provider_request_data=provider_request_data,
+                    )
+                    # 立即提交，使前端轮询可见此结果
+                    await self.db.commit()
+                    # 刷新 task 对象，避免 commit 后属性过期
+                    await self.db.refresh(task)
+                else:
+                    error_msg = err or "未返回有效结果"
+                    errors.append(f"{pid}: {error_msg}")
+                    logger.warning("[风格转换] Provider [%s] 失败: %s", pid, error_msg)
+                    await self._record_interaction(
+                        task=task,
+                        image_url=image_url,
+                        prompt=prompt,
+                        extra_prompt=_extra_prompt,
+                        feedback=feedback,
+                        options=options,
+                        status="failed",
+                        error_message=error_msg,
+                        duration_ms=duration_ms,
+                        provider_override=pid,
+                        provider_request_data=provider_request_data,
+                    )
+                    await self.db.commit()
+                    await self.db.refresh(task)
+
+            if not result_records:
+                raise AIServiceException(f"所有 Provider 均未返回有效结果: {'; '.join(errors)}")
+
+        else:
+            # ========= 单模型模式（向后兼容）=========
+            task_providers = [task.provider] if task.provider else []
+            try:
                 response = await self.provider_manager.generate(
                     provider_request, preferred=task.provider
                 )
@@ -758,105 +904,76 @@ class StyleService:
 
                 if response.status != "success" or not response.results:
                     raise AIServiceException(response.error or "AI 生成未返回结果")
-                multi_results = [(task.provider, response)]
-        except Exception as exc:
-            # 阶段3 调用失败：记录一次「失败」的模型交互
-            await self._record_interaction(
-                task=task,
-                image_url=image_url,
-                prompt=prompt,
-                extra_prompt=task.extra_prompt,
-                feedback=feedback,
-                options=options,
-                status="failed",
-                error_message=str(exc),
-                duration_ms=int((time.monotonic() - started_at) * 1000),
-                provider_request_data=base_request_data,
-            )
-            raise
 
-        # 阶段4：先用 Provider 临时 URL 立即写库，用户秒看结果；
-        # 后台异步下载+上传到永久存储后替换 URL。
-        await self.repo.update_task_status(
-            task.task_id, stage="uploading", progress=70
-        )
-        await self.db.flush()
-
-        # 快速路径：立即写入结果记录（使用 Provider 临时 URL，通常有效期 24h+）
-        # 遍历所有 Provider 的结果，为每个 Provider 分别创建 StyleResult
-        result_records: list[tuple[str, str]] = []  # (result_id, provider_url)
-        analysis_json_str = json.dumps(analysis, ensure_ascii=False) if analysis else None
-        all_output_urls: list[str] = []
-        # 积分只扣一次：只在第一条结果上记录 credits_used，其余记 0
-        credit_cost = settings.rate_limit.credit_cost_per_convert
-        first_result_recorded = False
-
-        for provider_id, resp in multi_results:
-            if resp.status != "success" or not resp.results:
-                logger.warning("[风格转换] Provider [%s] 未返回有效结果，跳过", provider_id)
-                continue
-
-            provider_resp_str = json.dumps(
-                resp.raw_response or {}, ensure_ascii=False, default=str
-            )
-
-            for r in resp.results:
-                rid = uuid.uuid4().hex
-                # 积分只扣一次：第一条结果记录消耗积分，其余记 0
-                credits_for_this = credit_cost if not first_result_recorded else 0
-                first_result_recorded = True
-                await self.repo.create_result(
-                    result_id=rid,
-                    task_id=task.task_id,
-                    user_id=task.user_id,
-                    image_id=task.image_id,
-                    skill_id=task.skill_id,
-                    provider=provider_id,
-                    result_url=r.url,  # Provider 临时 URL，立即可用
-                    thumbnail_url=None,
-                    prompt_used=prompt,
-                    analysis_json=analysis_json_str,
-                    provider_response=provider_resp_str,
-                    favorite=False,
-                    credits_used=credits_for_this,
+                # 写入结果
+                provider_resp_str = json.dumps(
+                    response.raw_response or {}, ensure_ascii=False, default=str
                 )
-                result_records.append((rid, r.url))
-                all_output_urls.append(r.url)
+                for r in response.results:
+                    rid = uuid.uuid4().hex
+                    credits_for_this = credit_cost if not first_result_recorded else 0
+                    first_result_recorded = True
+                    await self.repo.create_result(
+                        result_id=rid,
+                        task_id=task.task_id,
+                        user_id=task.user_id,
+                        image_id=task.image_id,
+                        skill_id=task.skill_id,
+                        provider=task.provider,
+                        result_url=r.url,
+                        thumbnail_url=None,
+                        prompt_used=prompt,
+                        analysis_json=analysis_json_str,
+                        provider_response=provider_resp_str,
+                        favorite=False,
+                        credits_used=credits_for_this,
+                    )
+                    result_records.append((rid, r.url))
 
-            # 为每个成功的 Provider 分别记录一次模型交互
-            duration_ms = int((time.monotonic() - started_at) * 1000)
+                duration_ms = int((time.monotonic() - started_at) * 1000)
+                provider_cfg = model_config_store.get_config(task.provider) or {}
+                provider_request_data = {
+                    **base_request_data,
+                    "provider_config": {
+                        "model": provider_cfg.get("model_image", ""),
+                        "base_url": provider_cfg.get("base_url", ""),
+                        "watermark": provider_cfg.get("watermark"),
+                        "width": provider_cfg.get("width"),
+                        "height": provider_cfg.get("height"),
+                        "seed": provider_cfg.get("seed"),
+                    },
+                }
+                await self._record_interaction(
+                    task=task,
+                    image_url=image_url,
+                    prompt=prompt,
+                    extra_prompt=task.extra_prompt,
+                    feedback=feedback,
+                    options=options,
+                    status="success",
+                    output_image_urls=[r.url for r in response.results],
+                    provider_response=response.raw_response,
+                    duration_ms=duration_ms,
+                    provider_override=task.provider,
+                    provider_request_data=provider_request_data,
+                )
+                await self.db.commit()
 
-            # 构建该 Provider 的请求体快照（基础 + Provider 配置）
-            provider_cfg = model_config_store.get_config(provider_id) or {}
-            provider_request_data = {
-                **base_request_data,
-                "provider_config": {
-                    "model": provider_cfg.get("model_image", ""),
-                    "base_url": provider_cfg.get("base_url", ""),
-                    "watermark": provider_cfg.get("watermark"),
-                    "width": provider_cfg.get("width"),
-                    "height": provider_cfg.get("height"),
-                    "seed": provider_cfg.get("seed"),
-                },
-            }
-
-            await self._record_interaction(
-                task=task,
-                image_url=image_url,
-                prompt=prompt,
-                extra_prompt=task.extra_prompt,
-                feedback=feedback,
-                options=options,
-                status="success",
-                output_image_urls=[r.url for r in resp.results],
-                provider_response=resp.raw_response,
-                duration_ms=duration_ms,
-                provider_override=provider_id,
-                provider_request_data=provider_request_data,
-            )
-
-        if not result_records:
-            raise AIServiceException("所有 Provider 均未返回有效结果")
+            except Exception as exc:
+                # 阶段3 调用失败：记录一次「失败」的模型交互
+                await self._record_interaction(
+                    task=task,
+                    image_url=image_url,
+                    prompt=prompt,
+                    extra_prompt=task.extra_prompt,
+                    feedback=feedback,
+                    options=options,
+                    status="failed",
+                    error_message=str(exc),
+                    duration_ms=int((time.monotonic() - started_at) * 1000),
+                    provider_request_data=base_request_data,
+                )
+                raise
 
         # 阶段5：扣减用户积分（不管调用了几个模型，只扣一次固定积分）
         stmt = select(User).where(User.user_id == task.user_id)
@@ -865,7 +982,6 @@ class StyleService:
         if user and not user.is_admin:
             from app.services.credit_service import CreditService
             credit_service = CreditService(self.db)
-            credit_cost = settings.rate_limit.credit_cost_per_convert
             logger.info(f"[积分] 准备扣除用户 {task.user_id} 的 {credit_cost} 积分（转换消耗，多模型不倍增）")
             await credit_service.deduct_credits(
                 user_id=task.user_id,
@@ -924,6 +1040,14 @@ class StyleService:
         # 实际使用的完整提示词（取首个结果）：前端「重新生成」时回传作为基础提示词
         final_prompt_used = results[0].prompt_used if results else None
 
+        # 确定 providers 列表与 pending_providers
+        if task.provider:
+            providers_list = [task.provider]
+        else:
+            providers_list = model_config_store.get_enabled_providers()
+        done_providers = list({r.provider for r in results if r.provider})
+        pending_list = [p for p in providers_list if p not in done_providers] if task.status == "running" else []
+
         return TaskStatusResponse(
             task_id=task.task_id,
             image_id=task.image_id,
@@ -935,6 +1059,8 @@ class StyleService:
             results=result_models,
             error=task.error_message if task.status == "failed" else None,
             final_prompt=final_prompt_used,
+            providers=providers_list,
+            pending_providers=pending_list,
         )
 
     async def get_public_task_status(self, task_id: str) -> TaskStatusResponse:
@@ -958,6 +1084,14 @@ class StyleService:
 
         image = await self.repo.get_image(task.image_id)
 
+        # 确定 providers 列表与 pending_providers
+        if task.provider:
+            providers_list = [task.provider]
+        else:
+            providers_list = model_config_store.get_enabled_providers()
+        done_providers = list({r.provider for r in results if r.provider})
+        pending_list = [p for p in providers_list if p not in done_providers] if task.status == "running" else []
+
         return TaskStatusResponse(
             task_id=task.task_id,
             image_id=task.image_id,
@@ -969,6 +1103,8 @@ class StyleService:
             results=result_models,
             error=task.error_message if task.status == "failed" else None,
             final_prompt=None,  # 公开接口不暴露提示词
+            providers=providers_list,
+            pending_providers=pending_list,
         )
 
     async def cancel_task(self, user_id: str, task_id: str) -> TaskStatusResponse:
@@ -984,7 +1120,7 @@ class StyleService:
             return await self.get_task_status(user_id, task_id)
 
         await self.repo.update_task_status(
-            task_id, status="canceled", stage="canceled", completed_at=None
+            task_id, status="canceled", stage="canceled",
         )
         await self.db.commit()
         return await self.get_task_status(user_id, task_id)
@@ -1017,28 +1153,31 @@ class StyleService:
             provider_override: 多模型模式下 task.provider 为空，用此值覆盖 provider 字段
             provider_request_data: 实际发给 Provider API 的请求体快照
         """
+        # 使用 SAVEPOINT 隔离交互记录写入，失败时只回滚 SAVEPOINT，
+        # 不影响外层事务（task 状态更新、积分扣除等仍在同一 session 中继续）
         try:
-            rec = ModelInteraction(
-                interaction_id=uuid.uuid4().hex,
-                task_id=task.task_id,
-                user_id=task.user_id,
-                skill_id=task.skill_id,
-                provider=provider_override or task.provider,
-                input_image_url=image_url,
-                prompt_sent=prompt,
-                extra_prompt=extra_prompt,
-                feedback=feedback,
-                location=options.get("location"),
-                provider_request=json.dumps(provider_request_data, ensure_ascii=False, default=str) if provider_request_data else None,
-                output_image_urls=json.dumps(output_image_urls or [], ensure_ascii=False),
-                output_count=len(output_image_urls or []),
-                provider_response=json.dumps(provider_response or {}, ensure_ascii=False, default=str),
-                status=status,
-                error_message=error_message,
-                duration_ms=duration_ms,
-            )
-            self.db.add(rec)
-            await self.db.flush()
+            async with self.db.begin_nested():
+                rec = ModelInteraction(
+                    interaction_id=uuid.uuid4().hex,
+                    task_id=task.task_id,
+                    user_id=task.user_id,
+                    skill_id=task.skill_id,
+                    provider=provider_override or task.provider,
+                    input_image_url=image_url,
+                    prompt_sent=prompt,
+                    extra_prompt=extra_prompt,
+                    feedback=feedback,
+                    location=options.get("location"),
+                    provider_request=json.dumps(provider_request_data, ensure_ascii=False, default=str) if provider_request_data else None,
+                    output_image_urls=json.dumps(output_image_urls or [], ensure_ascii=False),
+                    output_count=len(output_image_urls or []),
+                    provider_response=json.dumps(provider_response or {}, ensure_ascii=False, default=str),
+                    status=status,
+                    error_message=error_message,
+                    duration_ms=duration_ms,
+                )
+                self.db.add(rec)
+                await self.db.flush()
         except Exception as exc:
             logger.warning("[交互记录] 写入失败（不影响主流程）: %s", exc)
 

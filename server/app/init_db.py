@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS `model_interactions` (
   `extra_prompt`       TEXT           NULL                    COMMENT '用户额外提示词',
   `feedback`           TEXT           NULL                    COMMENT '重新生成修改意见',
   `location`           VARCHAR(128)   NULL                    COMMENT '拍摄地点',
+  `provider_request`   TEXT           NULL                    COMMENT '实际请求体JSON',
   `output_image_urls`  TEXT           NOT NULL                COMMENT '输出结果图地址(JSON列表)',
   `output_count`       INT            NOT NULL DEFAULT 0      COMMENT '输出结果数量',
   `provider_response`  TEXT           NULL                    COMMENT '服务商原始响应',
@@ -53,9 +54,23 @@ async def ensure_model_interactions_table() -> None:
     async with engine.begin() as conn:
         await conn.execute(text(_CREATE_MODEL_INTERACTIONS))
 
+    # 确保 provider_request 列存在（后期新增字段）
+    async with engine.begin() as conn:
+        result = await conn.execute(text(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = 'model_interactions' "
+            "AND COLUMN_NAME = 'provider_request'"
+        ))
+        if result.first() is None:
+            await conn.execute(text(
+                "ALTER TABLE `model_interactions` "
+                "ADD COLUMN `provider_request` TEXT NULL COMMENT '实际请求体JSON' "
+                "AFTER `location`"
+            ))
+
     # 确保复合索引存在（加速筛选查询）
     async with engine.begin() as conn:
-        # 检查复合索引是否已存在
         result = await conn.execute(text(
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS "
             "WHERE TABLE_SCHEMA = DATABASE() "

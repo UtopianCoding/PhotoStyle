@@ -134,6 +134,7 @@ export function useConvert() {
     finalPrompt: string
     feedback: string
     location?: string
+    provider?: string
   }): Promise<StyleTask | null> {
     if (!params.finalPrompt?.trim()) {
       ElMessage.warning('缺少原图提示词，无法重新生成')
@@ -151,6 +152,7 @@ export function useConvert() {
         finalPrompt: params.finalPrompt,
         feedback: params.feedback.trim(),
         location: params.location,
+        provider: params.provider || '',
       })
       taskStore.setTask(task)
       taskStore.poll()

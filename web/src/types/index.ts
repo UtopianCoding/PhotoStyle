@@ -115,6 +115,8 @@ export interface StyleTask {
   provider: string
   /** 实际调用的 Provider 列表（多模型并行时包含多个） */
   providers?: string[]
+  /** 仍在处理中的 Provider 列表 */
+  pendingProviders?: string[]
   extraPrompt?: string | null
   options?: Record<string, unknown>
   status: TaskStatus
@@ -249,6 +251,8 @@ export interface DashScopeConfig {
   width: number | null
   height: number | null
   seed: number | null
+  timeout: number | null
+  promptExtend: boolean | null
 }
 
 /**
@@ -368,6 +372,8 @@ export interface SystemConfigUpdate {
       width?: number | null
       height?: number | null
       seed?: number | null
+      timeout?: number | null
+      promptExtend?: boolean | null
     }
     dalle?: {
       apiKey?: string

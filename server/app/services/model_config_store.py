@@ -200,6 +200,9 @@ class ModelConfigStore:
                 "model_image": settings.dashscope.model_image,
                 "workspace_id": settings.dashscope.workspace_id,
                 "region": settings.dashscope.region,
+                # 运行时可调：超时（秒，默认 300）与提示词自动扩展（默认开启）
+                "timeout": 300,
+                "prompt_extend": True,
             },
             "dalle": {
                 "api_key": settings.dalle.api_key.get_secret_value(),

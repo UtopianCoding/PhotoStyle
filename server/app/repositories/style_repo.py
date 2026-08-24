@@ -4,6 +4,8 @@
 封装任务创建、状态更新、结果创建与历史查询等数据操作。
 """
 
+from datetime import datetime
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,7 +91,18 @@ class StyleRepository(BaseRepository[StyleTask]):
         started_at=None,
         completed_at=None,
     ) -> None:
-        """更新任务状态（字段级更新，仅更新非 None 字段）"""
+        """更新任务状态（字段级更新，仅更新非 None 字段）
+
+        自动时间戳填充（当调用方未显式传入时）：
+        - 进入 running 时写入 started_at
+        - 进入终态（success/failed/canceled）时写入 completed_at
+        """
+        now = datetime.utcnow()
+        if status == "running" and started_at is None:
+            started_at = now
+        if status in ("success", "failed", "canceled") and completed_at is None:
+            completed_at = now
+
         data: dict = {}
         if status is not None:
             data["status"] = status

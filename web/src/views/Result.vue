@@ -27,6 +27,8 @@ const favoriting = ref(false)
 const showRegenerate = ref(false)
 // 用户填写的修改意见
 const feedback = ref('')
+// 重新转换时选择的 Provider（空字符串=全部模型，非空=指定模型）
+const regenProvider = ref('')
 
 // 修改意见快捷建议：点击一键填入，降低表达门槛
 const FEEDBACK_SUGGESTIONS = [
@@ -60,12 +62,14 @@ async function onRegenerate() {
     skillId: task.value.skillId,
     finalPrompt: originalPrompt.value,
     feedback: feedback.value,
+    provider: regenProvider.value,
   })
   if (newTask) {
     // 跳转到新的任务结果页（useTaskPolling 会在路由参数变化时自动重拉）
     router.push(`/result/${newTask.taskId}`)
     showRegenerate.value = false
     feedback.value = ''
+    regenProvider.value = ''
   }
 }
 
@@ -293,6 +297,22 @@ const firstProviderLabel = computed(() => {
 // 是否有多模型结果
 const hasMultiResults = computed(() => keptResults.value.length > 1)
 
+// 仍在处理中的 Provider 列表
+const pendingProviders = computed(() => task.value?.pendingProviders ?? [])
+// 是否有 Provider 仍在处理中
+const hasPending = computed(() => pendingProviders.value.length > 0)
+// 是否有已完成的中间结果（running 状态下已有部分结果）
+const hasPartialResults = computed(
+  () => task.value?.status === 'running' && keptResults.value.length > 0,
+)
+// 部分结果预览列表（原图 + 已完成结果）
+const partialPreviewList = computed(() => {
+  const list: string[] = []
+  if (originalUrl.value) list.push(originalUrl.value)
+  keptResults.value.forEach(r => list.push(r.resultUrl))
+  return list
+})
+
 // 预览图列表：原图 + 所有保留的效果图
 const previewList = computed(() => {
   const list: string[] = []
@@ -506,8 +526,93 @@ function goBack() {
       <span class="result-topbar__task font-mono-label">任务 #{{ taskId }}</span>
     </div>
 
-    <!-- 进行中：动画 + 朱砂进度条 -->
-    <div v-if="!isDone && !isFailed" class="progress-card">
+    <!-- 失败 / 取消 -->
+    <div v-if="isFailed">
+      <EmptyState text="任务失败或已取消" />
+    </div>
+
+    <!-- 部分结果：已有 Provider 完成，其他仍在处理 -->
+    <div v-else-if="hasPartialResults" class="partial-results">
+      <!-- 进度条：朱砂描边进度 + 完成数 -->
+      <div class="partial-results__progress-bar">
+        <div class="partial-results__progress-track">
+          <div
+            class="partial-results__progress-fill"
+            :style="{ width: `${Math.round(keptResults.length / (task?.providers ?? []).length * 100)}%` }"
+          ></div>
+        </div>
+        <span class="partial-results__progress-label">
+          {{ keptResults.length }} / {{ (task?.providers ?? []).length }} 完成
+        </span>
+      </div>
+
+      <!-- 效果图画廊：原图 + 已完成结果 + 待处理占位 -->
+      <div class="partial-results__gallery">
+        <!-- 原图列 -->
+        <div class="partial-results__frame partial-results__frame--source">
+          <div class="partial-results__seal font-display">前</div>
+          <div class="partial-results__label font-display">原图</div>
+          <div class="partial-results__img-wrap">
+            <el-image
+              v-if="originalUrl"
+              :src="originalUrl"
+              fit="contain"
+              class="partial-results__img"
+              preview-teleported
+              :preview-src-list="partialPreviewList"
+              :initial-index="0"
+            />
+          </div>
+        </div>
+
+        <!-- 已完成的结果 -->
+        <div
+          v-for="(r, idx) in keptResults"
+          :key="r.resultId"
+          class="partial-results__frame partial-results__frame--done ink-fade"
+        >
+          <div class="partial-results__seal partial-results__seal--done font-display">后</div>
+          <div class="partial-results__label font-display">
+            {{ providerLabel(r.provider) }}
+          </div>
+          <div class="partial-results__img-wrap">
+            <el-image
+              :src="r.resultUrl"
+              fit="contain"
+              class="partial-results__img"
+              preview-teleported
+              :preview-src-list="partialPreviewList"
+              :initial-index="originalUrl ? idx + 1 : idx"
+            />
+          </div>
+        </div>
+
+        <!-- 仍在处理中的 Provider 占位 -->
+        <div
+          v-for="pid in pendingProviders"
+          :key="`pending-${pid}`"
+          class="partial-results__frame partial-results__frame--pending"
+        >
+          <div class="partial-results__label font-display partial-results__label--pending">
+            {{ providerLabel(pid) }}
+          </div>
+          <div class="partial-results__img-wrap partial-results__img-wrap--pending">
+            <div class="partial-results__ink-anim">
+              <span class="partial-results__ink-dot partial-results__ink-dot--1"></span>
+              <span class="partial-results__ink-dot partial-results__ink-dot--2"></span>
+              <span class="partial-results__ink-dot partial-results__ink-dot--3"></span>
+            </div>
+            <span class="partial-results__pending-hint font-display">绘制中</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 趣味话语 -->
+      <p :key="funMsgIndex" class="progress-card__fun-msg" style="text-align:center; margin-top:20px;">{{ funMessage }}</p>
+    </div>
+
+    <!-- 进行中：动画 + 朱砂进度条（尚无结果时的等待页） -->
+    <div v-else-if="!isDone" class="progress-card">
       <!-- 动画区域 -->
       <div class="progress-anim">
         <!-- 水墨圆环动画 -->
@@ -536,67 +641,85 @@ function goBack() {
       <p class="progress-card__hint">预计需要 30~60 秒，请耐心等待</p>
     </div>
 
-    <!-- 失败 / 取消 -->
-    <EmptyState v-else-if="isFailed" text="任务失败或已取消" />
+    <!-- 成功：根据结果数量选择布局 -->
+    <div v-else class="result-reveal">
+      <!-- 揭晓横幅：任务完成提示 -->
+      <div class="reveal-banner">
+        <div class="reveal-banner__icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5" opacity="0.3"/>
+            <path d="M11 16.5L14.5 20L21 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="reveal-banner__content">
+          <h2 class="reveal-banner__title">转换完成</h2>
+          <p class="reveal-banner__subtitle">你的照片已焕然一新</p>
+        </div>
+      </div>
 
-    <!-- 成功：原图与效果图两列对比，点击可预览 -->
-    <div v-else>
-      <div class="paper-frame">
-        <div v-if="originalUrl || resultUrl" class="result-grid">
+      <!-- ===== 单模型：经典两列对比 ===== -->
+      <div v-if="!hasMultiResults" class="comparison-stage">
+        <div v-if="originalUrl || resultUrl" class="comparison-grid">
           <!-- 原图列 -->
-          <div class="result-col">
-            <div class="result-col__label font-display">
-              <span class="ink-stamp">前</span>
-              <span>原图</span>
+          <div class="comparison-col comparison-col--before">
+            <div class="comparison-label">
+              <span class="comparison-label__seal comparison-label__seal--before">前</span>
+              <span class="comparison-label__text">原图</span>
             </div>
-            <div class="result-col__img-wrap">
+            <div class="comparison-frame">
               <el-image
                 v-if="originalUrl"
                 :src="originalUrl"
                 :preview-src-list="previewList"
                 :initial-index="0"
                 fit="contain"
-                class="result-col__img"
+                class="comparison-frame__img"
                 preview-teleported
                 hide-on-click-modal
               >
                 <template #placeholder>
-                  <div class="result-col__placeholder">加载中…</div>
+                  <div class="comparison-frame__placeholder">加载中…</div>
                 </template>
               </el-image>
-              <div v-else class="result-col__placeholder">原图未加载</div>
+              <div v-else class="comparison-frame__placeholder">原图未加载</div>
             </div>
           </div>
 
+          <!-- 转换箭头 -->
+          <div class="comparison-arrow">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+
           <!-- 效果图列 -->
-          <div class="result-col">
-            <div class="result-col__label font-display">
-              <span class="ink-stamp">后</span>
-              <span>效果图</span>
-              <el-tag v-if="firstProviderLabel" size="small" class="result-col__provider-tag">
+          <div class="comparison-col comparison-col--after">
+            <div class="comparison-label">
+              <span class="comparison-label__seal comparison-label__seal--after">后</span>
+              <span class="comparison-label__text">效果图</span>
+              <el-tag v-if="firstProviderLabel" size="small" class="comparison-label__provider">
                 {{ firstProviderLabel }}
               </el-tag>
-              <span class="result-col__label-hint">点击预览大图</span>
+              <span class="comparison-label__hint">点击预览</span>
             </div>
-            <div class="result-col__img-wrap result-col__img-wrap--effect">
+            <div class="comparison-frame comparison-frame--effect">
               <el-image
                 v-if="resultUrl"
                 :src="resultUrl"
                 :preview-src-list="previewList"
                 :initial-index="previewInitialIndex"
                 fit="contain"
-                class="result-col__img"
+                class="comparison-frame__img"
                 preview-teleported
                 hide-on-click-modal
                 @click="onPreviewResult"
               >
                 <template #placeholder>
-                  <div class="result-col__placeholder">生成中…</div>
+                  <div class="comparison-frame__placeholder">生成中…</div>
                 </template>
               </el-image>
-              <div v-else class="result-col__placeholder">暂无效果图</div>
-              <!-- 悬停放大提示 -->
-              <div v-if="resultUrl" class="result-col__zoom-hint">
+              <div v-else class="comparison-frame__placeholder">暂无效果图</div>
+              <div v-if="resultUrl" class="comparison-frame__overlay">
                 <el-icon><ZoomIn /></el-icon>
               </div>
             </div>
@@ -604,39 +727,75 @@ function goBack() {
         </div>
       </div>
 
-      <!-- 多模型结果：展示所有保留的结果，可删除不想要的 -->
-      <div v-if="hasMultiResults" class="multi-results-grid">
-        <div
-          v-for="(r, idx) in keptResults"
-          :key="r.resultId"
-          class="multi-results-item"
-          :class="{ 'multi-results-item--active': idx === 0 }"
-        >
-          <span class="multi-results-item__tag">
-            {{ providerLabel(r.provider) }}
-          </span>
-          <!-- 删除按钮：至少保留 1 张 -->
-          <button
-            v-if="keptResults.length > 1"
-            class="multi-results-item__delete"
-            :disabled="deletingResultId === r.resultId"
-            @click.stop="onRemoveResult(r.resultId)"
+      <!-- ===== 多模型：原图 + 全部效果图并排网格 ===== -->
+      <div v-else class="multi-results-layout">
+        <div class="multi-results__grid" :class="`multi-results__grid--${Math.min(keptResults.length, 2)}`">
+          <!-- 原图列 -->
+          <div v-if="originalUrl" class="multi-results__card multi-results__card--source">
+            <div class="multi-results__card-head font-display">
+              <span class="multi-results__card-seal multi-results__card-seal--source">前</span>
+              <span>原图</span>
+            </div>
+            <div class="multi-results__card-body">
+              <el-image
+                :src="originalUrl"
+                :preview-src-list="previewList"
+                :initial-index="0"
+                fit="contain"
+                class="multi-results__card-img"
+                preview-teleported
+                hide-on-click-modal
+              />
+              <div class="multi-results__card-zoom">
+                <el-icon><ZoomIn /></el-icon>
+              </div>
+            </div>
+          </div>
+
+          <!-- 效果图卡片 -->
+          <div
+            v-for="(r, idx) in keptResults"
+            :key="r.resultId"
+            class="multi-results__card"
           >
-            <el-icon :size="14"><Close /></el-icon>
-          </button>
-          <el-image
-            :src="r.resultUrl"
-            :preview-src-list="previewList"
-            :initial-index="originalUrl ? idx + 1 : idx"
-            fit="cover"
-            class="multi-results-item__img"
-            preview-teleported
-            @click="switchMainResult(idx)"
-          />
+            <div class="multi-results__card-head font-display">
+              <span class="multi-results__card-seal">后</span>
+              <span>{{ providerLabel(r.provider) }}</span>
+              <span class="multi-results__card-hint">点击预览大图</span>
+            </div>
+            <div class="multi-results__card-body">
+              <el-image
+                :src="r.resultUrl"
+                :preview-src-list="previewList"
+                :initial-index="originalUrl ? idx + 1 : idx"
+                fit="contain"
+                class="multi-results__card-img"
+                preview-teleported
+                hide-on-click-modal
+              >
+                <template #placeholder>
+                  <div class="result-col__placeholder">加载中…</div>
+                </template>
+              </el-image>
+              <div class="multi-results__card-zoom">
+                <el-icon><ZoomIn /></el-icon>
+              </div>
+            </div>
+            <!-- 删除按钮 -->
+            <button
+              v-if="keptResults.length > 1"
+              class="multi-results__card-delete"
+              :disabled="deletingResultId === r.resultId"
+              @click.stop="onRemoveResult(r.resultId)"
+            >
+              <el-icon :size="14"><Close /></el-icon>
+            </button>
+          </div>
         </div>
       </div>
+
       <!-- 单结果时显示删除按钮 -->
-      <div v-else-if="keptResults.length === 1 && keptResults[0]" class="single-result-actions">
+      <div v-if="keptResults.length === 1 && keptResults[0] && !hasMultiResults" class="single-result-actions">
         <button
           class="single-result-delete"
           :disabled="deletingResultId === keptResults[0].resultId"
@@ -647,35 +806,48 @@ function goBack() {
         </button>
       </div>
 
-      <div class="mt-5 flex flex-wrap justify-center gap-3">
-        <el-button :icon="Download" type="primary" @click="onDownload">下载</el-button>
-        <el-button
-          :icon="Star"
-          :type="favorite ? 'warning' : 'default'"
-          :loading="favoriting"
-          @click="onFavorite"
-        >
-          {{ favorite ? (hasMultiResults ? '已收藏全部' : '已收藏') : (hasMultiResults ? '收藏全部' : '收藏') }}
-        </el-button>
-        <el-button :icon="Share" class="result-secondary-btn" @click="onShare">分享</el-button>
-        <el-button
-          v-if="resultUrl"
-          :icon="Picture"
-          class="result-secondary-btn"
-          :disabled="posterLoading"
-          @click="onGeneratePoster"
-        >
-          生成分享海报
-        </el-button>
-        <el-button
-          v-if="originalPrompt"
-          :icon="Refresh"
-          class="result-secondary-btn"
-          :disabled="regenerating"
-          @click="showRegenerate = !showRegenerate"
-        >
-          重新转换
-        </el-button>
+      <!-- 操作按钮区域：编辑杂志风格的工具栏 -->
+      <div class="action-toolbar">
+        <!-- 主要操作组 -->
+        <div class="action-group action-group--primary">
+          <el-button :icon="Download" type="primary" size="large" @click="onDownload">
+            下载
+          </el-button>
+          <el-button
+            :icon="Star"
+            size="large"
+            :type="favorite ? 'warning' : 'default'"
+            :loading="favoriting"
+            @click="onFavorite"
+          >
+            {{ favorite ? (hasMultiResults ? '已收藏全部' : '已收藏') : (hasMultiResults ? '收藏全部' : '收藏') }}
+          </el-button>
+        </div>
+
+        <!-- 次要操作组 -->
+        <div class="action-group action-group--secondary">
+          <el-button :icon="Share" text @click="onShare">
+            分享
+          </el-button>
+          <el-button
+            v-if="resultUrl"
+            :icon="Picture"
+            text
+            :disabled="posterLoading"
+            @click="onGeneratePoster"
+          >
+            生成海报
+          </el-button>
+          <el-button
+            v-if="originalPrompt"
+            :icon="Refresh"
+            text
+            :disabled="regenerating"
+            @click="showRegenerate = !showRegenerate"
+          >
+            重新转换
+          </el-button>
+        </div>
       </div>
 
       <!-- 重新转换（带意见）面板：基于上一次提示词叠加意见重新生成 -->
@@ -688,6 +860,31 @@ function goBack() {
               <p class="regen-panel__hint">
                 将基于上一次生成所用的完整提示词，叠加你的意见后重新生成，无需重新分析图片。
               </p>
+            </div>
+          </div>
+
+          <!-- 多模型时：选择基于哪个模型重新转换 -->
+          <div v-if="hasMultiResults" class="regen-provider-select">
+            <div class="regen-provider-select__label font-display">选择模型</div>
+            <div class="regen-provider-select__options">
+              <button
+                type="button"
+                class="regen-provider-option"
+                :class="{ 'regen-provider-option--active': regenProvider === '' }"
+                @click="regenProvider = ''"
+              >
+                全部模型
+              </button>
+              <button
+                v-for="r in keptResults"
+                :key="r.resultId"
+                type="button"
+                class="regen-provider-option"
+                :class="{ 'regen-provider-option--active': regenProvider === r.provider }"
+                @click="regenProvider = r.provider"
+              >
+                {{ providerLabel(r.provider) }}
+              </button>
             </div>
           </div>
 
@@ -733,34 +930,40 @@ function goBack() {
     <el-dialog
       v-model="posterDialog"
       title="分享海报"
-      width="min(480px, 92vw)"
+      width="min(520px, 92vw)"
       align-center
       class="poster-dialog-wrap"
     >
       <div class="poster-dialog">
         <!-- 多模型时显示图片选择条 -->
-        <div v-if="hasMultiResults" class="poster-picker">
-          <div
-            v-for="r in keptResults"
-            :key="r.resultId"
-            class="poster-picker__item"
-            :class="{ 'poster-picker__item--active': posterSelectedId === r.resultId }"
-            @click="posterSelectedId = r.resultId; onPosterImageChange()"
-          >
-            <img :src="r.resultUrl" :alt="providerLabel(r.provider)" />
-            <span class="poster-picker__label">{{ providerLabel(r.provider) }}</span>
+        <div v-if="hasMultiResults" class="poster-picker-wrap">
+          <div class="poster-picker__label-text font-display">选择效果图</div>
+          <div class="poster-picker">
+            <div
+              v-for="r in keptResults"
+              :key="r.resultId"
+              class="poster-picker__item"
+              :class="{ 'poster-picker__item--active': posterSelectedId === r.resultId }"
+              @click="posterSelectedId = r.resultId; onPosterImageChange()"
+            >
+              <img :src="r.resultUrl" :alt="providerLabel(r.provider)" />
+              <span class="poster-picker__item-label">{{ providerLabel(r.provider) }}</span>
+              <span v-if="posterSelectedId === r.resultId" class="poster-picker__check">✓</span>
+            </div>
           </div>
         </div>
-        <div v-if="posterLoading" class="poster-dialog__loading">
-          <el-icon class="is-loading" :size="22"><Loading /></el-icon>
-          <span>海报生成中…</span>
+        <div class="poster-preview">
+          <div v-if="posterLoading" class="poster-dialog__loading">
+            <el-icon class="is-loading" :size="22"><Loading /></el-icon>
+            <span>海报生成中…</span>
+          </div>
+          <img
+            v-else-if="posterDataUrl"
+            :src="posterDataUrl"
+            class="poster-dialog__img"
+            alt="分享海报"
+          />
         </div>
-        <img
-          v-else-if="posterDataUrl"
-          :src="posterDataUrl"
-          class="poster-dialog__img"
-          alt="分享海报"
-        />
       </div>
       <template #footer>
         <el-button :disabled="posterLoading" @click="posterDialog = false">关闭</el-button>
@@ -1018,6 +1221,276 @@ function goBack() {
 .result-col__img-wrap--effect:hover {
   box-shadow: var(--shadow-md);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   新设计系统：编辑杂志风格的转换结果展示
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* 揭晓容器：入场动画 */
+.result-reveal {
+  animation: reveal-entrance 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes reveal-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 揭晓横幅：任务完成的仪式感 */
+.reveal-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  margin-bottom: 32px;
+  background: linear-gradient(135deg, var(--color-bg-card) 0%, rgba(200, 68, 43, 0.03) 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  animation: banner-slide-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+
+@keyframes banner-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.reveal-banner__icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  border-radius: 50%;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(200, 68, 43, 0.25);
+}
+
+.reveal-banner__content {
+  flex: 1;
+}
+
+.reveal-banner__title {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.reveal-banner__subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* 对比舞台：单模型布局 */
+.comparison-stage {
+  margin-bottom: 40px;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+@media (max-width: 768px) {
+  .comparison-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .comparison-arrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+}
+
+.comparison-col {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 对比标签：编辑杂志风格 */
+.comparison-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--color-border);
+}
+
+.comparison-label__seal {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+  font-family: var(--font-display);
+}
+
+/* 原图印章：温暖的石灰调，如墨石 */
+.comparison-label__seal--before {
+  background: #e8e4dc;
+  color: #6b665e;
+  border: 1px solid #d4cec5;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* 效果图印章：朱砂红，精致而不过于刺眼 */
+.comparison-label__seal--after {
+  background: linear-gradient(135deg, #d65b3f 0%, #c8442b 100%);
+  color: #fff;
+  border: 1px solid rgba(168, 54, 31, 0.2);
+  box-shadow: 0 2px 6px rgba(200, 68, 43, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.comparison-label__text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: 0.02em;
+  flex: 1;
+}
+
+.comparison-label__provider {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.comparison-label__hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+/* 对比画框：精致的图片容器 */
+.comparison-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.comparison-frame--effect {
+  cursor: zoom-in;
+  border-color: rgba(200, 68, 43, 0.2);
+}
+
+.comparison-frame--effect:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(200, 68, 43, 0.15);
+  border-color: rgba(200, 68, 43, 0.4);
+}
+
+.comparison-frame__img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.comparison-frame__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.comparison-frame__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.comparison-frame--effect:hover .comparison-frame__overlay {
+  opacity: 1;
+}
+
+.comparison-frame__overlay svg {
+  width: 32px;
+  height: 32px;
+  color: #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* 转换箭头：视觉引导 */
+.comparison-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  animation: arrow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes arrow-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(4px);
+  }
+}
+
+@media (max-width: 768px) {
+  @keyframes arrow-pulse {
+    0%, 100% {
+      opacity: 0.6;
+      transform: translateY(0) rotate(90deg);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(4px) rotate(90deg);
+    }
+  }
+}
+
+.result-col__img-wrap--effect:hover {
+  box-shadow: var(--shadow-md);
+}
 .result-col__img {
   width: 100%;
   height: 100%;
@@ -1142,6 +1615,46 @@ function goBack() {
   color: var(--color-primary);
   font-weight: 500;
 }
+
+/* 重新转换：模型选择器 */
+.regen-provider-select {
+  margin-bottom: 14px;
+}
+.regen-provider-select__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 8px;
+  letter-spacing: 0.04em;
+}
+.regen-provider-select__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.regen-provider-option {
+  appearance: none;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  transition: all 0.18s ease;
+}
+.regen-provider-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.regen-provider-option--active {
+  background: rgba(200, 68, 43, 0.1);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
 .regen-panel__actions {
   margin-top: 14px;
   display: flex;
@@ -1161,12 +1674,19 @@ function goBack() {
 .poster-dialog-wrap :deep(.el-dialog__body) {
   max-height: 72vh;
   overflow: auto;
+  padding: 16px 20px;
 }
 .poster-dialog {
-  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+.poster-preview {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 200px;
 }
 .poster-dialog__loading {
   display: flex;
@@ -1179,6 +1699,7 @@ function goBack() {
 }
 .poster-dialog__img {
   width: 100%;
+  max-width: 400px;
   display: block;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
@@ -1227,86 +1748,114 @@ function goBack() {
   letter-spacing: 0.04em;
 }
 
-/* 多模型结果网格 —— 宣纸卷轴式横滑 */
-.multi-results-grid {
-  display: flex;
-  gap: 18px;
-  margin-top: 24px;
-  padding: 4px 2px 12px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
+/* ============ 多模型结果布局 ============ */
+.multi-results-layout {
+  margin-bottom: 8px;
 }
-.multi-results-grid::-webkit-scrollbar {
-  height: 4px;
+
+/* 效果图网格：固定 3 列（1 原图 + 最多 2 效果图 / 行） */
+.multi-results__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
 }
-.multi-results-grid::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 2px;
+.multi-results__grid--2 {
+  grid-template-columns: repeat(3, 1fr);
 }
-.multi-results-item {
+
+/* 效果图卡片 */
+.multi-results__card {
   position: relative;
-  flex: 0 0 180px;
   border-radius: var(--radius-md);
-  overflow: hidden;
-  border: 1.5px solid var(--color-border);
   background: var(--color-bg-card);
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-  scroll-snap-align: start;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
-.multi-results-item:hover {
+.multi-results__card:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-md);
 }
-.multi-results-item--active {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px rgba(200, 68, 43, 0.12), var(--shadow-sm);
-}
-.multi-results-item__tag {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 1;
-  font-size: 10px;
-  font-family: var(--font-display);
+.multi-results__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
   letter-spacing: 0.06em;
-  padding: 2px 7px;
-  border-radius: 2px;
-  background: rgba(28, 28, 26, 0.6);
-  color: #f5f2ec;
-  backdrop-filter: blur(4px);
-  white-space: nowrap;
-  pointer-events: none;
+  border-bottom: 1px solid var(--color-border);
 }
-.multi-results-item__img {
-  width: 180px;
-  height: 240px;
+/* 多模型效果图印章：朱砂红渐变 */
+.multi-results__card-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, #d65b3f 0%, #c8442b 100%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(200, 68, 43, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  font-family: var(--font-display);
+}
+/* 原图印章：温暖石灰调 */
+.multi-results__card-seal--source {
+  background: #e8e4dc;
+  color: #6b665e;
+  border: 1px solid #d4cec5;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.multi-results__card-hint {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-placeholder);
+  letter-spacing: 0.03em;
+}
+.multi-results__card-body {
+  position: relative;
+  aspect-ratio: 3/4;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+.multi-results__card-img {
+  width: 100%;
+  height: 100%;
   display: block;
   cursor: pointer;
 }
-
-@media (max-width: 640px) {
-  .multi-results-item {
-    flex: 0 0 140px;
-  }
-  .multi-results-item__img {
-    width: 140px;
-    height: 187px;
-  }
+.multi-results__card-zoom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(28, 28, 26, 0.25);
+  color: #fff;
+  font-size: 28px;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.multi-results__card:hover .multi-results__card-zoom {
+  opacity: 1;
 }
 
-/* 删除按钮：右上角墨底半透明圆形 */
-.multi-results-item__delete {
+/* 卡片删除按钮 */
+.multi-results__card-delete {
   position: absolute;
-  top: 8px;
+  top: 44px;
   right: 8px;
   z-index: 2;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: rgba(28, 28, 26, 0.6);
+  background: rgba(28, 28, 26, 0.55);
   color: #f5f2ec;
   border: none;
   cursor: pointer;
@@ -1316,13 +1865,21 @@ function goBack() {
   transition: all 0.2s ease;
   backdrop-filter: blur(4px);
 }
-.multi-results-item__delete:hover:not(:disabled) {
+.multi-results__card-delete:hover:not(:disabled) {
   background: var(--color-primary);
   transform: scale(1.1);
 }
-.multi-results-item__delete:disabled {
+.multi-results__card-delete:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .multi-results__grid {
+    grid-template-columns: 1fr;
+    max-width: 360px;
+    margin: 0 auto;
+  }
 }
 
 /* 单结果时的删除按钮 */
@@ -1354,11 +1911,20 @@ function goBack() {
 }
 
 /* 海报图片选择条 */
+.poster-picker-wrap {
+  width: 100%;
+}
+.poster-picker__label-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 10px;
+  letter-spacing: 0.04em;
+}
 .poster-picker {
   display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding: 12px;
+  gap: 12px;
+  padding: 10px 12px;
   background: var(--color-bg);
   border-radius: var(--radius-md);
   overflow-x: auto;
@@ -1374,38 +1940,371 @@ function goBack() {
 }
 .poster-picker__item {
   position: relative;
-  flex: 0 0 80px;
+  flex: 0 0 88px;
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
+  background: var(--color-bg-card);
 }
 .poster-picker__item:hover {
   border-color: var(--color-border);
+  transform: translateY(-2px);
 }
 .poster-picker__item--active {
   border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(200, 68, 43, 0.2);
 }
 .poster-picker__item img {
-  width: 80px;
-  height: 100px;
+  width: 88px;
+  height: 110px;
   object-fit: cover;
   display: block;
 }
-.poster-picker__label {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 2px 4px;
-  font-size: 10px;
+.poster-picker__item-label {
+  display: block;
+  padding: 4px 6px;
+  font-size: 11px;
   font-family: var(--font-display);
-  background: rgba(28, 28, 26, 0.7);
-  color: #f5f2ec;
+  background: var(--color-bg-card);
+  color: var(--color-text);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+.poster-picker__item--active .poster-picker__item-label {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.poster-picker__check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ============ 部分结果区域 ============ */
+.partial-results {
+  margin-top: 8px;
+}
+
+/* 进度条：朱砂填充 + 右侧数字 */
+.partial-results__progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.partial-results__progress-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.partial-results__progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.partial-results__progress-label {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* 画廊：固定 3 列（1 原图 + 最多 2 效果图 / 行） */
+.partial-results__gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+/* 画框：统一卡片，与成功区域的 result-col 风格一致 */
+.partial-results__frame {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.partial-results__frame:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+
+/* 画框顶部：朱印章 + 标签 */
+.partial-results__seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 12px 0 0 12px;
+  border-radius: 4px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(28, 28, 26, 0.2);
+  flex-shrink: 0;
+}
+.partial-results__seal--done {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: var(--shadow-seal);
+}
+.partial-results__label {
+  margin: 6px 12px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: 0.06em;
+}
+.partial-results__label--pending {
+  color: var(--color-text-secondary);
+}
+
+/* 图片区域 */
+.partial-results__img-wrap {
+  position: relative;
+  aspect-ratio: 3/4;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+.partial-results__img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: pointer;
+}
+
+/* 待处理占位：水墨晕染动画 */
+.partial-results__frame--pending {
+  border-style: dashed;
+  border-color: rgba(156, 150, 139, 0.35);
+  opacity: 0.75;
+}
+.partial-results__frame--pending:hover {
+  opacity: 0.85;
+  transform: none;
+  box-shadow: none;
+}
+.partial-results__img-wrap--pending {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.partial-results__ink-anim {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+.partial-results__ink-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.3;
+  animation: ink-breathe 2.4s ease-in-out infinite;
+}
+.partial-results__ink-dot--1 {
+  width: 12px;
+  height: 12px;
+  top: 6px;
+  left: 8px;
+  animation-delay: 0s;
+}
+.partial-results__ink-dot--2 {
+  width: 16px;
+  height: 16px;
+  top: 18px;
+  left: 20px;
+  animation-delay: 0.6s;
+}
+.partial-results__ink-dot--3 {
+  width: 10px;
+  height: 10px;
+  top: 28px;
+  left: 6px;
+  animation-delay: 1.2s;
+}
+@keyframes ink-breathe {
+  0%, 100% { opacity: 0.15; transform: scale(0.8); }
+  50% { opacity: 0.45; transform: scale(1.15); }
+}
+.partial-results__pending-hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 640px) {
+  .partial-results__gallery {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .partial-results__gallery {
+    grid-template-columns: 1fr;
+    max-width: 280px;
+    margin: 0 auto;
+  }
+}
+
+/* ============ 操作工具栏 ============ */
+.action-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  margin-top: 48px;
+  padding-top: 36px;
+  border-top: 1px solid var(--color-border);
+}
+
+.action-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.action-group--primary {
+  gap: 12px;
+}
+
+.action-group--secondary {
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(156, 150, 139, 0.06);
+  border-radius: 24px;
+}
+
+/* 主要按钮样式：精致渐变 */
+.action-group--primary :deep(.el-button) {
+  min-width: 110px;
+  height: 40px;
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.03em;
+  border-radius: 8px;
+  transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.action-group--primary :deep(.el-button--primary) {
+  background: linear-gradient(135deg, #d65b3f 0%, #c8442b 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(200, 68, 43, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.action-group--primary :deep(.el-button--primary:hover) {
+  background: linear-gradient(135deg, #e06949 0%, #d65b3f 100%);
+  box-shadow: 0 4px 14px rgba(200, 68, 43, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.action-group--primary :deep(.el-button--warning) {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.action-group--primary :deep(.el-button--warning:hover) {
+  background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 100%);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+/* 次要按钮样式：轻盈文本按钮 */
+.action-group--secondary :deep(.el-button) {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 450;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  transition: all 0.2s ease;
+}
+
+.action-group--secondary :deep(.el-button:hover) {
+  color: var(--color-text);
+  background: rgba(156, 150, 139, 0.1);
+}
+
+.action-group--secondary :deep(.el-button .el-icon) {
+  font-size: 15px;
+  margin-right: 4px;
+}
+
+/* 按钮分隔符（次要操作组内） */
+.action-group--secondary :deep(.el-button + .el-button)::before {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  margin: 0 6px;
+  background: var(--color-border);
+  vertical-align: middle;
+}
+
+/* 响应式优化 */
+@media (max-width: 640px) {
+  .action-toolbar {
+    gap: 16px;
+    margin-top: 36px;
+    padding-top: 28px;
+  }
+
+  .action-group--primary {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .action-group--primary :deep(.el-button) {
+    flex: 1;
+    min-width: 0;
+    height: 42px;
+  }
+
+  .action-group--secondary {
+    width: 100%;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 10px;
+  }
+
+  .action-group--secondary :deep(.el-button) {
+    font-size: 12px;
+    padding: 0 10px;
+    height: 32px;
+  }
+
+  .action-group--secondary :deep(.el-button .el-icon) {
+    font-size: 14px;
+  }
 }
 </style>

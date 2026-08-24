@@ -27,6 +27,14 @@ class DashScopeConfigRead(BaseModel):
     width: int | None = Field(None, description="图片宽度（像素），为空时不设置")
     height: int | None = Field(None, description="图片高度（像素），为空时不设置")
     seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
+    timeout: int | None = Field(
+        None,
+        description="单次调用超时（秒），为空时使用默认值 300",
+    )
+    prompt_extend: bool | None = Field(
+        None,
+        description="是否启用提示词自动扩展（None=使用默认 true）",
+    )
 
 
 class OpenAIConfigRead(BaseModel):
@@ -164,6 +172,8 @@ class DashScopeConfigUpdate(BaseModel):
     width: int | None = None
     height: int | None = None
     seed: int | None = None
+    timeout: int | None = None
+    prompt_extend: bool | None = None
 
 
 class OpenAIConfigUpdate(BaseModel):

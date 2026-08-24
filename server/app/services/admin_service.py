@@ -128,6 +128,9 @@ class AdminService:
                     width=qw.get("width"),
                     height=qw.get("height"),
                     seed=qw.get("seed"),
+                    timeout=qw.get("timeout"),
+                    # prompt_extend 默认 true：未显式配置时返回开启状态
+                    prompt_extend=qw.get("prompt_extend", True),
                 ),
                 dalle=OpenAIConfigRead(
                     api_key=mask_secret(dl.get("api_key", "")),
@@ -237,6 +240,7 @@ class AdminService:
                 current["workspace_id"] = d.workspace_id
             if d.region is not None:
                 current["region"] = d.region
+            # 原可选字段：仅在传值时写入，None 视为"不修改"
             if d.watermark is not None:
                 current["watermark"] = d.watermark
             if d.width is not None:
@@ -245,6 +249,16 @@ class AdminService:
                 current["height"] = d.height
             if d.seed is not None:
                 current["seed"] = d.seed
+            # timeout：传 0 或 None 则删除字段（恢复默认 300），否则写入
+            if d.timeout:  # > 0 才写入
+                if d.timeout < 30:
+                    raise ValueError("千问 timeout 必须 >= 30 秒")
+                current["timeout"] = d.timeout
+            elif "timeout" in current:
+                del current["timeout"]
+            # prompt_extend：始终覆盖写入（前端必发 true/false）
+            if d.prompt_extend is not None:
+                current["prompt_extend"] = bool(d.prompt_extend)
             await store.save_provider_config("qianwen", _sanitize_config(current))
 
         # OpenAI / DALL-E

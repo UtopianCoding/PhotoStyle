@@ -175,6 +175,10 @@ class TaskStatusResponse(BaseModel):
     error: str | None = Field(default=None, description="错误信息")
     # 本次生成实际使用的完整提示词（成功时返回首个结果）：前端用于「重新生成」时回传原提示词
     final_prompt: str | None = Field(default=None, description="实际使用的完整提示词")
+    # 实际调用的 Provider 列表（多模型并行时包含多个）
+    providers: list[str] = Field(default_factory=list, description="实际调用的 Provider 列表")
+    # 仍在处理中的 Provider 列表（多模型并行时，尚未返回结果的 Provider）
+    pending_providers: list[str] = Field(default_factory=list, description="仍在处理中的 Provider")
 
 
 class RemoveResultsRequest(BaseModel):

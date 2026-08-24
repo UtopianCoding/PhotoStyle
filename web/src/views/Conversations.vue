@@ -62,6 +62,17 @@ function fmtTime(t: string): string {
   return (t || '').replace('T', ' ').slice(0, 19)
 }
 
+// 请求体快照格式化展示
+function formatProviderRequest(raw?: string | null): string {
+  if (!raw) return '（无）'
+  try {
+    const obj = JSON.parse(raw)
+    return JSON.stringify(obj, null, 2)
+  } catch {
+    return raw
+  }
+}
+
 // Provider 显示名称映射
 const PROVIDER_LABELS: Record<string, string> = {
   qianwen: '千问',
@@ -332,6 +343,12 @@ watch([skillId, status], onFilterChange)
         <div v-if="detail.providerResponse" class="conv-detail__section">
           <div class="conv-detail__label">服务商原始响应</div>
           <pre class="conv-detail__resp">{{ detail.providerResponse }}</pre>
+        </div>
+
+        <!-- 实际请求体快照 -->
+        <div v-if="detail.providerRequest" class="conv-detail__section">
+          <div class="conv-detail__label">实际请求体快照</div>
+          <pre class="conv-detail__resp">{{ formatProviderRequest(detail.providerRequest) }}</pre>
         </div>
       </div>
     </el-dialog>

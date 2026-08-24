@@ -225,10 +225,11 @@ export interface ConversationItem {
 }
 
 /**
- * 模型交互记录详情（对齐后端 ConversationDetail，含服务商原始响应）
+ * 模型交互记录详情（对齐后端 ConversationDetail，含服务商原始响应和请求体快照）
  */
 export interface ConversationDetail extends ConversationItem {
   providerResponse?: string | null
+  providerRequest?: string | null
 }
 
 // ============================================================

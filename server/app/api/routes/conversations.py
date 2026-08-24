@@ -74,11 +74,12 @@ async def get_conversation_detail(
     user: CurrentUser,
     repo: ConversationRepoDep,
 ) -> ApiResponse[ConversationDetail]:
-    """获取单条交互记录详情（含服务商原始响应）"""
+    """获取单条交互记录详情（含服务商原始响应和请求体快照）"""
     rec = await repo.get_by_interaction_id(interaction_id, user.user_id)
     if rec is None:
         raise NotFoundException(f"交互记录 [{interaction_id}] 不存在")
     item = _to_item(rec)
     detail = ConversationDetail(**item.model_dump())
     detail.provider_response = rec.provider_response
+    detail.provider_request = rec.provider_request
     return ApiResponse.success(data=detail)

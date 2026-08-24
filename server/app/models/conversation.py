@@ -46,6 +46,9 @@ class ModelInteraction(Base):
     # 冰箱贴等技能使用的拍摄地点
     location: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="拍摄地点")
 
+    # 实际发给 Provider API 的请求体快照（含 model、size、watermark、seed、reference_images 等）
+    provider_request: Mapped[str | None] = mapped_column(Text, nullable=True, comment="实际请求体JSON")
+
     # -------------------- 输出 --------------------
     # 输出结果图地址列表（JSON 数组字符串）
     output_image_urls: Mapped[str] = mapped_column(Text, nullable=False, default="[]", comment="输出结果图地址(JSON列表)")

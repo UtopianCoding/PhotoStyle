@@ -69,7 +69,9 @@ class ConversationListResponse(BaseModel):
 
 
 class ConversationDetail(ConversationItem):
-    """交互记录详情（继承列表项，额外暴露服务商原始响应）"""
+    """交互记录详情（继承列表项，额外暴露服务商原始响应和请求体快照）"""
 
     # AI 服务商原始响应（JSON 字符串）
     provider_response: str | None = Field(default=None, description="服务商原始响应")
+    # 实际发给 Provider API 的请求体快照（JSON 字符串）
+    provider_request: str | None = Field(default=None, description="实际请求体快照")

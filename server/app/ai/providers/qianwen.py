@@ -126,7 +126,7 @@ class QianwenProvider(ImageProvider):
         try:
             # 构建额外参数（仅在有值时传入）
             extra_kwargs: dict[str, Any] = {
-                "prompt_extend": False,  # VL 分析已生成精准提示词，无需模型自动扩展
+                "prompt_extend": True,  # 启用提示词自动扩展，让模型优化生成效果
                 "size": size,
             }
             if cfg_watermark is not None:

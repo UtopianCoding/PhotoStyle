@@ -54,6 +54,7 @@ from app.schemas.style import (
     TaskResult,
     TaskStatusResponse,
 )
+from app.services.model_config_store import model_config_store
 
 # -------------------- 共享 HTTP 客户端（连接池复用） --------------------
 
@@ -491,7 +492,6 @@ class StyleService:
         if payload.provider:
             providers_list = [payload.provider]
         else:
-            from app.services.model_config_store import model_config_store
             providers_list = model_config_store.get_enabled_providers()
 
         return ConvertResponse(
@@ -727,6 +727,17 @@ class StyleService:
             ),
         )
 
+        # 构建请求体快照的基础部分（所有 Provider 共享）
+        base_request_data = {
+            "prompt": prompt,
+            "image_url": image_url,
+            "reference_images": reference_images,
+            "options": {
+                "ratio": options.get("ratio", "3:4"),
+                "num_results": options.get("num_results", 1),
+            },
+        }
+
         # 判断是否使用多模型并行模式
         use_multi = not task.provider  # 空字符串表示使用全局启用的全部模型
         multi_results: list[tuple[str, Any]] = []  # [(provider_id, response), ...]
@@ -760,6 +771,7 @@ class StyleService:
                 status="failed",
                 error_message=str(exc),
                 duration_ms=int((time.monotonic() - started_at) * 1000),
+                provider_request_data=base_request_data,
             )
             raise
 
@@ -813,6 +825,21 @@ class StyleService:
 
             # 为每个成功的 Provider 分别记录一次模型交互
             duration_ms = int((time.monotonic() - started_at) * 1000)
+
+            # 构建该 Provider 的请求体快照（基础 + Provider 配置）
+            provider_cfg = model_config_store.get_config(provider_id) or {}
+            provider_request_data = {
+                **base_request_data,
+                "provider_config": {
+                    "model": provider_cfg.get("model_image", ""),
+                    "base_url": provider_cfg.get("base_url", ""),
+                    "watermark": provider_cfg.get("watermark"),
+                    "width": provider_cfg.get("width"),
+                    "height": provider_cfg.get("height"),
+                    "seed": provider_cfg.get("seed"),
+                },
+            }
+
             await self._record_interaction(
                 task=task,
                 image_url=image_url,
@@ -825,6 +852,7 @@ class StyleService:
                 provider_response=resp.raw_response,
                 duration_ms=duration_ms,
                 provider_override=provider_id,
+                provider_request_data=provider_request_data,
             )
 
         if not result_records:
@@ -978,6 +1006,7 @@ class StyleService:
         error_message: str | None = None,
         duration_ms: int | None = None,
         provider_override: str | None = None,
+        provider_request_data: dict | None = None,
     ) -> None:
         """
         记录一次与 AI 模型的交互（输入 + 输出），供审计与回溯。
@@ -986,6 +1015,7 @@ class StyleService:
 
         Args:
             provider_override: 多模型模式下 task.provider 为空，用此值覆盖 provider 字段
+            provider_request_data: 实际发给 Provider API 的请求体快照
         """
         try:
             rec = ModelInteraction(
@@ -999,6 +1029,7 @@ class StyleService:
                 extra_prompt=extra_prompt,
                 feedback=feedback,
                 location=options.get("location"),
+                provider_request=json.dumps(provider_request_data, ensure_ascii=False, default=str) if provider_request_data else None,
                 output_image_urls=json.dumps(output_image_urls or [], ensure_ascii=False),
                 output_count=len(output_image_urls or []),
                 provider_response=json.dumps(provider_response or {}, ensure_ascii=False, default=str),

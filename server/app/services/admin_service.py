@@ -117,6 +117,7 @@ class AdminService:
         return SystemConfigRead(
             model=ModelConfig(
                 default_provider=store.get_default_provider(),
+                enabled_providers=store.get_enabled_providers(),
                 qianwen=DashScopeConfigRead(
                     api_key=mask_secret(qw.get("api_key", "")),
                     model_vision=qw.get("model_vision", ""),
@@ -133,6 +134,7 @@ class AdminService:
                     api_key=mask_secret(mm.get("api_key", "")),
                     base_url=mm.get("base_url", ""),
                     model_image=mm.get("model_image", ""),
+                    watermark=mm.get("watermark", False),
                 ),
                 volcengine=VolcengineConfigRead(
                     api_key=mask_secret(vc.get("api_key", "")),
@@ -207,6 +209,10 @@ class AdminService:
         if model.default_provider is not None:
             await store.save_default_provider(model.default_provider)
 
+        # 启用 provider 列表
+        if model.enabled_providers is not None:
+            await store.save_enabled_providers(model.enabled_providers)
+
         # 千问 / DashScope
         if model.qianwen is not None:
             d = model.qianwen
@@ -245,6 +251,8 @@ class AdminService:
                 current["base_url"] = m.base_url
             if m.model_image is not None:
                 current["model_image"] = m.model_image
+            if m.watermark is not None:
+                current["watermark"] = m.watermark
             await store.save_provider_config("minimax", _sanitize_config(current))
 
         # 火山引擎（Seedream）

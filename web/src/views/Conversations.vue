@@ -62,6 +62,18 @@ function fmtTime(t: string): string {
   return (t || '').replace('T', ' ').slice(0, 19)
 }
 
+// Provider 显示名称映射
+const PROVIDER_LABELS: Record<string, string> = {
+  qianwen: '千问',
+  dalle: 'DALL-E',
+  minimax: 'MiniMax',
+  volcengine: '火山引擎',
+  doubao: '豆包',
+}
+function providerLabel(pid: string): string {
+  return PROVIDER_LABELS[pid] ?? pid
+}
+
 // -------------------- 数据加载 --------------------
 async function load() {
   loading.value = true
@@ -204,12 +216,16 @@ watch([skillId, status], onFilterChange)
         <!-- 输出缩略图 -->
         <div class="conv-card__outputs">
           <template v-if="item.outputImageUrls.length">
-            <img
+            <div
               v-for="(u, i) in item.outputImageUrls.slice(0, 2)"
               :key="i"
-              :src="u"
-              alt="输出结果"
-            />
+              class="conv-card__output-cell"
+            >
+              <img :src="u" alt="输出结果" />
+              <span v-if="item.provider" class="conv-card__provider-tag">
+                {{ providerLabel(item.provider) }}
+              </span>
+            </div>
             <span v-if="item.outputImageUrls.length > 2" class="conv-card__more">
               +{{ item.outputImageUrls.length - 2 }}
             </span>
@@ -269,15 +285,20 @@ watch([skillId, status], onFilterChange)
               输出结果（{{ detail.outputImageUrls.length }}）
             </div>
             <div v-if="detail.outputImageUrls.length" class="conv-detail__outputs">
-              <el-image
+              <div
                 v-for="(u, i) in detail.outputImageUrls"
                 :key="i"
-                :src="u"
-                fit="cover"
-                class="conv-detail__img"
-                :preview-src-list="detail.outputImageUrls"
-                :initial-index="i"
-              />
+                class="conv-detail__output-cell"
+              >
+                <el-image
+                  :src="u"
+                  fit="cover"
+                  class="conv-detail__img"
+                  :preview-src-list="detail.outputImageUrls"
+                  :initial-index="i"
+                />
+                <span class="conv-detail__provider-tag">{{ providerLabel(detail.provider) }}</span>
+              </div>
             </div>
             <div v-else class="conv-detail__noout">
               <el-icon><Warning /></el-icon> 本次交互无输出（生成失败）
@@ -512,13 +533,32 @@ watch([skillId, status], onFilterChange)
   gap: 6px;
   flex-shrink: 0;
 }
-.conv-card__outputs img {
+.conv-card__output-cell {
+  position: relative;
+}
+.conv-card__output-cell img {
   width: 56px;
   height: 56px;
   border-radius: var(--radius-sm);
   object-fit: cover;
   display: block;
   border: 1px solid var(--color-border);
+}
+.conv-card__provider-tag {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  font-size: 8px;
+  font-family: var(--font-display);
+  letter-spacing: 0.03em;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(28, 28, 26, 0.6);
+  color: #f5f2ec;
+  backdrop-filter: blur(3px);
+  white-space: nowrap;
+  pointer-events: none;
 }
 .conv-card__more {
   font-size: 12px;
@@ -602,9 +642,29 @@ watch([skillId, status], onFilterChange)
   gap: 8px;
   flex-wrap: wrap;
 }
-.conv-detail__outputs .conv-detail__img {
+.conv-detail__output-cell {
+  position: relative;
   width: calc(50% - 4px);
+}
+.conv-detail__output-cell .conv-detail__img {
+  width: 100%;
   height: 200px;
+}
+.conv-detail__provider-tag {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  font-size: 11px;
+  font-family: var(--font-display);
+  letter-spacing: 0.05em;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 2px;
+  background: rgba(28, 28, 26, 0.6);
+  color: #f5f2ec;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  pointer-events: none;
 }
 .conv-detail__noout {
   display: flex;

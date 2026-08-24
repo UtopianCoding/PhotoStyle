@@ -125,6 +125,22 @@ async function onBatchDelete() {
 function openResult(taskId: string) {
   router.push(`/result/${taskId}`)
 }
+
+// Provider 显示名称映射
+const PROVIDER_LABELS: Record<string, string> = {
+  qianwen: '千问',
+  dalle: 'DALL-E',
+  minimax: 'MiniMax',
+  volcengine: '火山引擎',
+  doubao: '豆包',
+}
+function providerLabel(pid: string): string {
+  return PROVIDER_LABELS[pid] ?? pid
+}
+// 缩略图对应的 Provider（按索引对齐）
+function thumbProvider(item: HistoryItem, idx: number): string {
+  return item.providers?.[idx] ?? ''
+}
 </script>
 
 <template>
@@ -160,20 +176,42 @@ function openResult(taskId: string) {
             <el-checkbox :value="item.taskId" class="history-card__check" />
             <!-- 3:4 竖版缩略图 -->
             <div class="history-card__img-wrap" @click="openResult(item.taskId)">
-              <img
-                v-if="item.resultThumbnails[0]"
-                :src="item.resultThumbnails[0]"
-                :alt="item.skillId"
-                loading="lazy"
-                decoding="async"
-              />
-              <img
-                v-else
-                :src="item.originalUrl"
-                :alt="item.skillId"
-                loading="lazy"
-                decoding="async"
-              />
+              <!-- 多模型结果：网格展示所有缩略图 -->
+              <div
+                v-if="item.resultThumbnails.length > 1"
+                class="history-card__multi-grid"
+              >
+                <div
+                  v-for="(thumb, tidx) in item.resultThumbnails"
+                  :key="tidx"
+                  class="history-card__multi-cell"
+                >
+                  <img :src="thumb" :alt="item.skillId" loading="lazy" decoding="async" />
+                  <span v-if="thumbProvider(item, tidx)" class="history-card__provider-tag">
+                    {{ providerLabel(thumbProvider(item, tidx)) }}
+                  </span>
+                </div>
+              </div>
+              <!-- 单结果：常规展示 -->
+              <template v-else>
+                <img
+                  v-if="item.resultThumbnails[0]"
+                  :src="item.resultThumbnails[0]"
+                  :alt="item.skillId"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <img
+                  v-else
+                  :src="item.originalUrl"
+                  :alt="item.skillId"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <span v-if="item.resultThumbnails[0] && thumbProvider(item, 0)" class="history-card__provider-tag">
+                  {{ providerLabel(thumbProvider(item, 0)) }}
+                </span>
+              </template>
               <div v-if="item.status === 'pending' || item.status === 'running'" class="history-card__mask">处理中</div>
             </div>
             <div class="history-card__bar">
@@ -302,6 +340,47 @@ function openResult(taskId: string) {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+/* 多模型缩略图网格 —— 宣纸分格 */
+.history-card__multi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  background: var(--color-border);
+}
+.history-card__multi-cell {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.history-card__multi-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+.history-card:hover .history-card__multi-cell img {
+  transform: scale(1.03);
+}
+/* Provider 标签 —— 墨底米字小标签 */
+.history-card__provider-tag {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  font-size: 9px;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: rgba(28, 28, 26, 0.6);
+  color: #f5f2ec;
+  backdrop-filter: blur(3px);
+  white-space: nowrap;
+  pointer-events: none;
 }
 .history-card__mask {
   position: absolute;

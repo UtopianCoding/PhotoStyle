@@ -1,6 +1,6 @@
-// 风格转换相关接口：分析图片、提交转换、查询任务、取消任务
+// 风格转换相关接口：分析图片、提交转换、查询任务、取消任务、删除结果
 import { request } from './request'
-import type { AnalysisResult, StyleTask } from '@/types'
+import type { AnalysisResult, StyleResult, StyleTask } from '@/types'
 
 /** 图片分析参数（skillId 可选，默认 photo-revival） */
 export interface AnalyzeParams {
@@ -73,5 +73,16 @@ export function cancelTask(taskId: string) {
   return request<StyleTask>({
     url: `/style/tasks/${taskId}/cancel`,
     method: 'post',
+  })
+}
+
+/**
+ * 删除指定结果（多模型场景下用户可删除不想要的结果）
+ */
+export function removeTaskResults(taskId: string, resultIds: string[]) {
+  return request<StyleResult[]>({
+    url: `/style/tasks/${taskId}/results`,
+    method: 'delete',
+    data: { resultIds },
   })
 }

@@ -4,8 +4,10 @@ Provider 管理器
 负责注册、选择与回退图像生成 Provider：
 - 按 provider_id 精确选择；
 - 不可用时按 fallback_chain 顺序回退到下一个可用 Provider。
+- 支持多 Provider 并发调用（generate_multi）。
 """
 
+import asyncio
 import logging
 from typing import Iterable
 
@@ -117,3 +119,82 @@ class ProviderManager:
         raise AIServiceException(
             f"所有可用 Provider 均调用失败: {'; '.join(errors) or '无可用 Provider'}"
         )
+
+    async def generate_multi(
+        self,
+        request: ImageProviderRequest,
+        providers: list[str] | None = None,
+    ) -> list[tuple[str, ImageProviderResponse]]:
+        """
+        并发调用多个 Provider 进行图像生成。
+
+        Args:
+            request: 统一请求对象
+            providers: 要调用的 Provider ID 列表；为空时从配置读取启用的 Provider
+
+        Returns:
+            [(provider_id, response), ...] 成功调用的结果列表
+
+        Raises:
+            AIServiceException: 所有 Provider 均失败或不可用
+        """
+        # 确定要调用的 Provider 列表
+        if not providers:
+            from app.services.model_config_store import model_config_store
+            providers = model_config_store.get_enabled_providers()
+
+        if not providers:
+            raise AIServiceException("未配置任何启用的 Provider")
+
+        # 过滤出可用的 Provider
+        available: list[str] = []
+        for pid in providers:
+            provider = self._providers.get(pid)
+            if provider and provider.is_available():
+                available.append(pid)
+            else:
+                logger.warning("Provider [%s] 不可用，跳过", pid)
+
+        if not available:
+            raise AIServiceException(f"所有指定的 Provider 均不可用: {providers}")
+
+        logger.info("并发调用 Provider: %s", available)
+
+        # 并发调用所有可用的 Provider
+        async def _call_one(pid: str) -> tuple[str, ImageProviderResponse | None, str | None]:
+            """调用单个 Provider，返回 (pid, response, error)"""
+            provider = self._providers[pid]
+            try:
+                response = await provider.generate_image(request)
+                return pid, response, None
+            except NotImplementedError as exc:
+                logger.warning("Provider [%s] 未实现: %s", pid, exc)
+                return pid, None, f"{pid}: 未实现"
+            except AIServiceException as exc:
+                logger.warning("Provider [%s] 调用失败: %s", pid, exc.message)
+                return pid, None, f"{pid}: {exc.message}"
+            except Exception as exc:
+                logger.exception("Provider [%s] 发生未预期异常", pid)
+                return pid, None, f"{pid}: {exc}"
+
+        results = await asyncio.gather(*[_call_one(pid) for pid in available])
+
+        # 收集成功的结果
+        successes: list[tuple[str, ImageProviderResponse]] = []
+        errors: list[str] = []
+        for pid, response, error in results:
+            if response is not None:
+                successes.append((pid, response))
+            elif error:
+                errors.append(error)
+
+        if not successes:
+            raise AIServiceException(
+                f"所有 Provider 均调用失败: {'; '.join(errors)}"
+            )
+
+        logger.info(
+            "多 Provider 调用完成: 成功=%d, 失败=%d",
+            len(successes), len(errors),
+        )
+        return successes

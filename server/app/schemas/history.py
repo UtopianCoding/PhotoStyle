@@ -24,8 +24,10 @@ class HistoryItem(BaseModel):
     task_id: str = Field(..., description="任务ID")
     # 技能ID
     skill_id: str = Field(..., description="技能ID")
-    # AI 提供商
+    # AI 提供商（单模型时返回该模型 ID，多模型时返回首个）
     provider: str = Field(..., description="AI提供商")
+    # 实际使用的 Provider 列表（多模型并行时包含多个）
+    providers: list[str] = Field(default_factory=list, description="实际使用的 Provider 列表")
     # 输入图片ID
     image_id: str = Field(..., description="图片ID")
     # 原图地址
@@ -54,8 +56,10 @@ class HistoryDetail(BaseModel):
     user_id: str
     # 技能ID
     skill_id: str
-    # AI 提供商
+    # AI 提供商（单模型时返回该模型 ID，多模型时返回首个）
     provider: str
+    # 实际使用的 Provider 列表（多模型并行时包含多个）
+    providers: list[str] = Field(default_factory=list, description="实际使用的 Provider 列表")
     # 输入图片ID
     image_id: str
     # 原图地址

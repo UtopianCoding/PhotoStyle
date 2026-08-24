@@ -6,13 +6,15 @@
 
 from fastapi import APIRouter, BackgroundTasks, status
 
-from app.api.deps import CurrentUser, DBSession, StyleServiceDep
+from app.api.deps import CurrentUser, DBSession, HistoryServiceDep, StyleServiceDep
 from app.schemas.common import ApiResponse
 from app.schemas.style import (
     AnalyzeRequest,
     AnalyzeResponse,
     ConvertRequest,
     ConvertResponse,
+    RemoveResultsRequest,
+    TaskResult,
     TaskStatusResponse,
 )
 from app.services.style_service import process_style_task
@@ -83,6 +85,25 @@ async def cancel_task(
     """取消任务"""
     status_resp = await service.cancel_task(user.user_id, task_id)
     return ApiResponse.success(data=status_resp, message="任务已取消")
+
+
+@router.delete("/tasks/{task_id}/results", response_model=ApiResponse[list[TaskResult]])
+async def remove_results(
+    task_id: str,
+    payload: RemoveResultsRequest,
+    user: CurrentUser,
+    history_service: HistoryServiceDep,
+) -> ApiResponse[list[TaskResult]]:
+    """
+    删除指定结果。
+
+    用户可选择删除不想要的模型生成结果，至少保留 1 张。
+    返回剩余的结果列表。
+    """
+    remaining = await history_service.remove_results(
+        user.user_id, task_id, payload.result_ids
+    )
+    return ApiResponse.success(data=remaining, message=f"已删除 {len(payload.result_ids)} 张结果")
 
 
 @router.get("/public/tasks/{task_id}", response_model=ApiResponse[TaskStatusResponse])

@@ -25,6 +25,7 @@ class ModelConfigStore:
     def __init__(self) -> None:
         self._configs: dict[str, dict[str, Any]] = {}
         self._default_provider: str = "qianwen"
+        self._enabled_providers: list[str] = ["qianwen"]
         self._loaded: bool = False
 
     @property
@@ -36,6 +37,10 @@ class ModelConfigStore:
     def get_default_provider(self) -> str:
         """获取默认 Provider ID"""
         return self._default_provider
+
+    def get_enabled_providers(self) -> list[str]:
+        """获取当前启用的 Provider ID 列表"""
+        return list(self._enabled_providers)
 
     def get_config(self, provider_id: str) -> dict[str, Any] | None:
         """获取指定 Provider 的配置字典"""
@@ -64,6 +69,10 @@ class ModelConfigStore:
     def set_default_provider(self, provider_id: str) -> None:
         """设置默认 Provider ID（仅更新内存）"""
         self._default_provider = provider_id
+
+    def set_enabled_providers(self, providers: list[str]) -> None:
+        """设置启用的 Provider 列表（仅更新内存）"""
+        self._enabled_providers = [p for p in providers if p in ALL_PROVIDER_IDS]
 
     # -------------------- DB 操作 --------------------
 
@@ -96,11 +105,24 @@ class ModelConfigStore:
                 # 没有显式默认值记录，取第一个有 api_key 的 provider
                 self._default_provider = "qianwen"
 
+            # 读取启用 Provider 列表
+            ep_row = await repo.get_by_provider_id("_enabled_providers")
+            if ep_row:
+                try:
+                    data = json.loads(ep_row.config_json)
+                    providers = data.get("providers", [])
+                    self._enabled_providers = [p for p in providers if p in ALL_PROVIDER_IDS]
+                except (json.JSONDecodeError, TypeError):
+                    self._enabled_providers = ["qianwen"]
+            else:
+                self._enabled_providers = [self._default_provider]
+
         self._loaded = True
         logger.info(
-            "模型配置已从 DB 加载: providers=%s, default=%s",
+            "模型配置已从 DB 加载: providers=%s, default=%s, enabled=%s",
             list(self._configs.keys()),
             self._default_provider,
+            self._enabled_providers,
         )
 
     async def save_provider_config(
@@ -131,6 +153,25 @@ class ModelConfigStore:
 
         self._default_provider = provider_id
         logger.info("默认 Provider 已更新为 [%s]", provider_id)
+
+    async def save_enabled_providers(self, providers: list[str]) -> None:
+        """保存启用的 Provider 列表到 DB 并更新内存"""
+        from app.repositories.provider_config_repo import ProviderConfigRepository
+
+        valid = [p for p in providers if p in ALL_PROVIDER_IDS]
+        if not valid:
+            valid = ["qianwen"]
+
+        async with async_session_maker() as session:
+            repo = ProviderConfigRepository(session)
+            await repo.upsert(
+                "_enabled_providers",
+                json.dumps({"providers": valid}),
+            )
+            await session.commit()
+
+        self._enabled_providers = valid
+        logger.info("启用 Provider 列表已更新: %s", valid)
 
     async def seed_from_env_if_empty(self) -> None:
         """首次启动时从 .env 配置播种到 DB"""
@@ -169,6 +210,7 @@ class ModelConfigStore:
                 "api_key": settings.minimax.api_key.get_secret_value(),
                 "base_url": settings.minimax.base_url,
                 "model_image": settings.minimax.model_image,
+                "watermark": settings.minimax.watermark,
             },
             "volcengine": {
                 "api_key": settings.volcengine.api_key.get_secret_value(),
@@ -186,6 +228,7 @@ class ModelConfigStore:
             await self.save_provider_config(pid, cfg)
 
         await self.save_default_provider(settings.model.default_provider)
+        await self.save_enabled_providers([settings.model.default_provider])
         await self.refresh_from_db()
 
 

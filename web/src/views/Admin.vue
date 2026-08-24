@@ -31,6 +31,7 @@ const activeProviderTab = ref<'qianwen' | 'dalle' | 'minimax' | 'volcengine'>('q
 const form = reactive({
   model: {
     defaultProvider: 'qianwen',
+    enabledProviders: ['qianwen'] as string[],
     qianwen: {
       apiKey: '',
       modelVision: '',
@@ -47,11 +48,13 @@ const form = reactive({
       apiKey: '',
       baseUrl: '',
       modelImage: '',
+      watermark: false,
     },
     volcengine: {
       apiKey: '',
       baseUrl: '',
       modelImage: '',
+      watermark: false,
     },
   },
   storage: {
@@ -115,6 +118,9 @@ async function loadConfig() {
 /** 将后端返回的配置填充到表单 */
 function fillForm(data: SystemConfig) {
   form.model.defaultProvider = data.model.defaultProvider
+  form.model.enabledProviders = data.model.enabledProviders?.length
+    ? [...data.model.enabledProviders]
+    : ['qianwen']
   form.model.qianwen = { ...data.model.qianwen }
   form.model.dalle = { ...data.model.dalle }
   form.model.minimax = { ...data.model.minimax }
@@ -137,6 +143,7 @@ function buildPayload(): SystemConfigUpdate {
   // 模型配置
   const model: NonNullable<SystemConfigUpdate['model']> = {
     defaultProvider: form.model.defaultProvider,
+    enabledProviders: [...form.model.enabledProviders],
   }
   // 千问
   const ds = form.model.qianwen
@@ -160,6 +167,7 @@ function buildPayload(): SystemConfigUpdate {
   if (mm.apiKey && !mm.apiKey.includes('****')) minimax.apiKey = mm.apiKey
   if (mm.baseUrl) minimax.baseUrl = mm.baseUrl
   if (mm.modelImage) minimax.modelImage = mm.modelImage
+  minimax.watermark = mm.watermark
   if (Object.keys(minimax).length > 0) model.minimax = minimax
   // 火山引擎（Seedream）
   const vc = form.model.volcengine
@@ -167,6 +175,7 @@ function buildPayload(): SystemConfigUpdate {
   if (vc.apiKey && !vc.apiKey.includes('****')) volcengine.apiKey = vc.apiKey
   if (vc.baseUrl) volcengine.baseUrl = vc.baseUrl
   if (vc.modelImage) volcengine.modelImage = vc.modelImage
+  volcengine.watermark = vc.watermark
   if (Object.keys(volcengine).length > 0) model.volcengine = volcengine
   payload.model = model
 
@@ -421,6 +430,19 @@ onMounted(() => {
               <div class="field-hint">选择图像生成默认使用的 Provider，可下方分别配置多个</div>
             </el-form-item>
 
+            <el-form-item label="启用模型（多选）" class="enabled-providers-item">
+              <el-checkbox-group v-model="form.model.enabledProviders">
+                <el-checkbox
+                  v-for="opt in providerOptions"
+                  :key="opt.value"
+                  :label="opt.value"
+                >
+                  {{ opt.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+              <div class="field-hint">勾选后用户每次转换将同时调用这些模型，积分只扣一次</div>
+            </el-form-item>
+
             <el-tabs v-model="activeProviderTab" class="provider-tabs">
               <el-tab-pane label="千问 (DashScope)" name="qianwen">
                 <div class="form-grid">
@@ -480,10 +502,14 @@ onMounted(() => {
                     <div class="field-hint">敏感字段，保存时若仍含 **** 将跳过写入</div>
                   </el-form-item>
                   <el-form-item label="接口基础地址">
-                    <el-input v-model="form.model.minimax.baseUrl" placeholder="如 https://api.minimax.chat/v1" />
+                    <el-input v-model="form.model.minimax.baseUrl" placeholder="如 https://api.minimaxi.com/v1" />
                   </el-form-item>
                   <el-form-item label="图像生成模型">
-                    <el-input v-model="form.model.minimax.modelImage" placeholder="如 image-01" />
+                    <el-input v-model="form.model.minimax.modelImage" placeholder="如 image-01 / image-01-live" />
+                  </el-form-item>
+                  <el-form-item label="AI 水印">
+                    <el-switch v-model="form.model.minimax.watermark" active-text="开启" inactive-text="关闭" />
+                    <div class="field-hint">开启后将在生成图片右下角添加「AI 生成」水印</div>
                   </el-form-item>
                 </div>
               </el-tab-pane>
@@ -501,7 +527,7 @@ onMounted(() => {
                   <el-form-item label="接口基础地址">
                     <el-input
                       v-model="form.model.volcengine.baseUrl"
-                      placeholder="如 https://ark.cn-beijing.volces.com/api/plan/v3"
+                      placeholder="如 https://ark.cn-beijing.volces.com/api/v3"
                     />
                   </el-form-item>
                   <el-form-item label="图像生成模型">
@@ -510,6 +536,10 @@ onMounted(() => {
                       placeholder="如 seedream-5-0-pro"
                     />
                     <div class="field-hint">可选：seedream-5-0-pro / seedream-5-0-lite / seedream-4-5 / seedream-4-0</div>
+                  </el-form-item>
+                  <el-form-item label="AI 水印">
+                    <el-switch v-model="form.model.volcengine.watermark" active-text="开启" inactive-text="关闭" />
+                    <div class="field-hint">开启后将在生成图片右下角添加「AI 生成」水印</div>
                   </el-form-item>
                 </div>
               </el-tab-pane>
@@ -994,6 +1024,47 @@ onMounted(() => {
   color: var(--color-text-secondary);
   margin-top: 4px;
   line-height: 1.4;
+}
+
+/* 启用模型多选框：茶色底、朱砂勾选 */
+.enabled-providers-item {
+  margin-bottom: 20px;
+}
+.enabled-providers-item :deep(.el-form-item__label) {
+  font-size: 13px;
+  color: var(--color-text);
+  font-weight: 500;
+}
+.enabled-providers-item :deep(.el-checkbox-group) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.enabled-providers-item :deep(.el-checkbox) {
+  margin: 0;
+  padding: 6px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.enabled-providers-item :deep(.el-checkbox.is-checked) {
+  background: rgba(200, 68, 43, 0.06);
+  border-color: rgba(200, 68, 43, 0.3);
+}
+.enabled-providers-item :deep(.el-checkbox__label) {
+  font-size: 13px;
+  color: var(--color-text);
+  padding-left: 6px;
+}
+.enabled-providers-item :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.enabled-providers-item :deep(.el-checkbox__inner) {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
 }
 
 .w-full {

@@ -53,11 +53,15 @@ class HistoryService:
             thumbnails = [r.thumbnail_url or r.result_url for r in results]
             has_favorite = any(r.favorite for r in results)
             image = images_map.get(task.image_id)
+            # 多模型模式下 task.provider 为空，从结果中推导实际使用的 Provider 列表
+            providers = list({r.provider for r in results if r.provider})
+            provider_display = task.provider if task.provider else (providers[0] if providers else "")
             items.append(
                 HistoryItem(
                     task_id=task.task_id,
                     skill_id=task.skill_id,
-                    provider=task.provider,
+                    provider=provider_display,
+                    providers=providers,
                     image_id=task.image_id,
                     original_url=image.original_url if image else "",
                     status=task.status,
@@ -86,6 +90,7 @@ class HistoryService:
                 result_url=r.result_url,
                 thumbnail_url=r.thumbnail_url,
                 favorite=r.favorite,
+                provider=r.provider or "",
                 created_at=r.created_at,
             )
             for r in results
@@ -93,11 +98,16 @@ class HistoryService:
 
         image = await self.repo.get_image(task.image_id)
 
+        # 多模型模式下 task.provider 为空，从结果中推导
+        providers = list({r.provider for r in results if r.provider})
+        provider_display = task.provider if task.provider else (providers[0] if providers else "")
+
         return HistoryDetail(
             task_id=task.task_id,
             user_id=task.user_id,
             skill_id=task.skill_id,
-            provider=task.provider,
+            provider=provider_display,
+            providers=providers,
             image_id=task.image_id,
             original_url=image.original_url if image else "",
             extra_prompt=task.extra_prompt,
@@ -139,3 +149,61 @@ class HistoryService:
         deleted = await self.repo.batch_delete_tasks(owned)
         await self.db.commit()
         return deleted
+
+    async def remove_results(
+        self, user_id: str, task_id: str, result_ids_to_remove: list[str]
+    ) -> list[TaskResult]:
+        """
+        删除指定结果，返回剩余结果列表。
+
+        Args:
+            user_id: 用户 ID
+            task_id: 任务 ID
+            result_ids_to_remove: 要删除的结果 ID 列表
+
+        Returns:
+            剩余的结果列表（TaskResult 格式）
+
+        Raises:
+            NotFoundException: 任务不存在
+            ForbiddenException: 无权操作
+            ValueError: 参数校验失败
+        """
+        # 校验任务归属
+        task = await self.repo.get_task(task_id)
+        if task is None:
+            raise TaskNotFoundException(f"任务 [{task_id}] 不存在")
+        if task.user_id != user_id:
+            raise ForbiddenException("无权操作该任务")
+
+        # 查询该任务下所有结果
+        all_results = await self.repo.get_results_by_task(task_id)
+        all_result_ids = {r.result_id for r in all_results}
+
+        # 校验要删除的 result_ids 均属于该任务
+        invalid_ids = [rid for rid in result_ids_to_remove if rid not in all_result_ids]
+        if invalid_ids:
+            raise ValueError(f"结果 ID 不属于该任务: {invalid_ids}")
+
+        # 校验删除后至少保留 1 条结果
+        remaining_count = len(all_results) - len(result_ids_to_remove)
+        if remaining_count < 1:
+            raise ValueError("至少需要保留 1 张结果图")
+
+        # 删除指定结果
+        await self.repo.batch_delete(result_ids_to_remove)
+        await self.db.commit()
+
+        # 重新查询剩余结果并返回
+        remaining_results = await self.repo.get_results_by_task(task_id)
+        return [
+            TaskResult(
+                result_id=r.result_id,
+                result_url=r.result_url,
+                thumbnail_url=r.thumbnail_url,
+                favorite=r.favorite,
+                provider=r.provider or "",
+                created_at=r.created_at,
+            )
+            for r in remaining_results
+        ]

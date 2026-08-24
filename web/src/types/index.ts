@@ -71,6 +71,8 @@ export interface StyleResult {
   resultUrl: string
   thumbnailUrl: string | null
   favorite: boolean
+  /** 来源 Provider ID */
+  provider: string
   createdAt: string | null
 }
 
@@ -111,6 +113,8 @@ export interface StyleTask {
   originalUrl: string
   skillId: string
   provider: string
+  /** 实际调用的 Provider 列表（多模型并行时包含多个） */
+  providers?: string[]
   extraPrompt?: string | null
   options?: Record<string, unknown>
   status: TaskStatus
@@ -151,6 +155,8 @@ export interface HistoryItem {
   taskId: string
   skillId: string
   provider: string
+  /** 实际使用的 Provider 列表（多模型并行时包含多个） */
+  providers?: string[]
   imageId: string
   originalUrl: string
   status: string
@@ -256,6 +262,7 @@ export interface MinimaxConfig {
   apiKey: string
   baseUrl: string
   modelImage: string
+  watermark: boolean
 }
 
 /**
@@ -265,6 +272,7 @@ export interface VolcengineConfig {
   apiKey: string
   baseUrl: string
   modelImage: string
+  watermark: boolean
 }
 
 /**
@@ -273,6 +281,8 @@ export interface VolcengineConfig {
 export interface ModelConfig {
   /** 默认图像生成 Provider ID：qianwen / dalle / minimax / volcengine */
   defaultProvider: string
+  /** 当前启用的 Provider ID 列表（多模型并行） */
+  enabledProviders: string[]
   qianwen: DashScopeConfig
   dalle: OpenAIConfig
   minimax: MinimaxConfig
@@ -336,6 +346,7 @@ export interface SystemConfig {
 export interface SystemConfigUpdate {
   model?: {
     defaultProvider?: string
+    enabledProviders?: string[]
     qianwen?: {
       apiKey?: string
       modelVision?: string
@@ -352,11 +363,13 @@ export interface SystemConfigUpdate {
       apiKey?: string
       baseUrl?: string
       modelImage?: string
+      watermark?: boolean
     }
     volcengine?: {
       apiKey?: string
       baseUrl?: string
       modelImage?: string
+      watermark?: boolean
     }
   }
   storage?: {

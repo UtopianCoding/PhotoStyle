@@ -43,6 +43,7 @@ class MinimaxConfigRead(BaseModel):
     api_key: str = Field("", description="API Key（脱敏）")
     base_url: str
     model_image: str
+    watermark: bool = Field(False, description="是否在生成图片上添加 AI 水印")
 
 
 class VolcengineConfigRead(BaseModel):
@@ -63,6 +64,8 @@ class ModelConfig(BaseModel):
 
     # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao / volcengine
     default_provider: str
+    # 启用的 Provider 列表（多模型并行转换）
+    enabled_providers: list[str] = Field(default_factory=lambda: ["qianwen"], description="启用的 Provider ID 列表")
     # 千问配置（provider_id=qianwen）
     qianwen: DashScopeConfigRead
     # OpenAI 配置（provider_id=dalle）
@@ -167,6 +170,7 @@ class MinimaxConfigUpdate(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     model_image: str | None = None
+    watermark: bool | None = None
 
 
 class VolcengineConfigUpdate(BaseModel):
@@ -186,6 +190,7 @@ class ModelConfigUpdate(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     default_provider: str | None = None
+    enabled_providers: list[str] | None = None
     qianwen: DashScopeConfigUpdate | None = None
     dalle: OpenAIConfigUpdate | None = None
     minimax: MinimaxConfigUpdate | None = None

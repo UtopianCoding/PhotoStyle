@@ -39,8 +39,8 @@ class ConvertRequest(BaseModel):
     image_id: str = Field(..., description="图片ID")
     # 技能ID（如 photo-revival），默认使用老照片复兴
     skill_id: str = Field(default="photo-revival", description="技能ID")
-    # AI 提供商：qianwen / doubao / dalle
-    provider: str = Field(default="qianwen", description="AI提供商")
+    # AI 提供商：qianwen / doubao / dalle / minimax / volcengine，空字符串表示使用全局启用的全部模型
+    provider: str = Field(default="", description="AI提供商，空字符串表示使用全局启用的全部模型")
     # 额外提示词（用户补充要求）
     extra_prompt: str | None = Field(default=None, description="额外提示词")
     # 风格选项
@@ -117,8 +117,10 @@ class ConvertResponse(BaseModel):
     status: str = Field(default="pending", description="任务状态")
     # 技能ID
     skill_id: str = Field(..., description="技能ID")
-    # AI 提供商
+    # AI 提供商（单模型时返回该模型 ID，多模型时返回首个）
     provider: str = Field(..., description="AI提供商")
+    # 实际调用的 Provider 列表（多模型并行时包含多个）
+    providers: list[str] = Field(default_factory=list, description="实际调用的 Provider 列表")
     # 预计耗时（秒）
     estimated_time: int = Field(default=30, description="预计耗时(秒)")
 
@@ -139,6 +141,8 @@ class TaskResult(BaseModel):
     thumbnail_url: str | None = None
     # 是否收藏
     favorite: bool = False
+    # 来源 Provider ID
+    provider: str = Field(default="", description="来源 Provider ID")
     # 创建时间
     created_at: datetime | None = None
 
@@ -171,3 +175,15 @@ class TaskStatusResponse(BaseModel):
     error: str | None = Field(default=None, description="错误信息")
     # 本次生成实际使用的完整提示词（成功时返回首个结果）：前端用于「重新生成」时回传原提示词
     final_prompt: str | None = Field(default=None, description="实际使用的完整提示词")
+
+
+class RemoveResultsRequest(BaseModel):
+    """删除指定结果请求"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+    # 要删除的结果ID列表
+    result_ids: list[str] = Field(..., description="要删除的结果ID列表")

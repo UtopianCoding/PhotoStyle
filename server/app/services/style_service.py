@@ -481,17 +481,25 @@ class StyleService:
             user_id=user_id,
             image_id=payload.image_id,
             skill_id=payload.skill_id,
-            provider=payload.provider,
+            provider=payload.provider,  # 空字符串表示使用全局启用的全部模型
             extra_prompt=payload.extra_prompt,
             options_json=json.dumps(options_dict, ensure_ascii=False),
         )
         await self.db.commit()
 
+        # 确定实际将使用的 Provider 列表（用于返回给前端）
+        if payload.provider:
+            providers_list = [payload.provider]
+        else:
+            from app.services.model_config_store import model_config_store
+            providers_list = model_config_store.get_enabled_providers()
+
         return ConvertResponse(
             task_id=task.task_id,
             status=task.status,
             skill_id=task.skill_id,
-            provider=task.provider,
+            provider=providers_list[0] if providers_list else "",
+            providers=providers_list,
             estimated_time=30,
         )
 
@@ -697,7 +705,7 @@ class StyleService:
 
         # 阶段3：调用 Provider 生成
         started_at = time.monotonic()
-        logger.info("[风格转换] 阶段3: 开始调用 Provider, task_id=%s, provider=%s", task.task_id, task.provider)
+        logger.info("[风格转换] 阶段3: 开始调用 Provider, task_id=%s, provider=%s", task.task_id, task.provider or "(multi)")
 
         # 加载风格参考图（仅对明确需要参考图的技能加载）
         # 注意：使用内存缓存，首次调用后会缓存 URL，修改 SKILL.md 后需重启服务
@@ -718,18 +726,30 @@ class StyleService:
                 num_results=options.get("num_results", 1),
             ),
         )
-        try:
-            response = await self.provider_manager.generate(
-                provider_request, preferred=task.provider
-            )
-            logger.info("[风格转换] 阶段3: Provider 返回, task_id=%s, status=%s, results=%d", task.task_id, response.status, len(response.results or []))
 
-            if response.status != "success" or not response.results:
-                raise AIServiceException(
-                    response.error or "AI 生成未返回结果"
+        # 判断是否使用多模型并行模式
+        use_multi = not task.provider  # 空字符串表示使用全局启用的全部模型
+        multi_results: list[tuple[str, Any]] = []  # [(provider_id, response), ...]
+
+        try:
+            if use_multi:
+                # 多模型并行模式
+                multi_results = await self.provider_manager.generate_multi(provider_request)
+                logger.info("[风格转换] 阶段3: 多 Provider 返回, task_id=%s, providers=%d",
+                           task.task_id, len(multi_results))
+            else:
+                # 单模型模式（向后兼容）
+                response = await self.provider_manager.generate(
+                    provider_request, preferred=task.provider
                 )
+                logger.info("[风格转换] 阶段3: Provider 返回, task_id=%s, status=%s, results=%d",
+                           task.task_id, response.status, len(response.results or []))
+
+                if response.status != "success" or not response.results:
+                    raise AIServiceException(response.error or "AI 生成未返回结果")
+                multi_results = [(task.provider, response)]
         except Exception as exc:
-            # 阶段3 调用失败：记录一次「失败」的模型交互（输入已知，无输出）
+            # 阶段3 调用失败：记录一次「失败」的模型交互
             await self._record_interaction(
                 task=task,
                 image_url=image_url,
@@ -751,49 +771,66 @@ class StyleService:
         await self.db.flush()
 
         # 快速路径：立即写入结果记录（使用 Provider 临时 URL，通常有效期 24h+）
+        # 遍历所有 Provider 的结果，为每个 Provider 分别创建 StyleResult
         result_records: list[tuple[str, str]] = []  # (result_id, provider_url)
         analysis_json_str = json.dumps(analysis, ensure_ascii=False) if analysis else None
-        provider_resp_str = json.dumps(
-            response.raw_response or {}, ensure_ascii=False, default=str
-        )
+        all_output_urls: list[str] = []
+        # 积分只扣一次：只在第一条结果上记录 credits_used，其余记 0
+        credit_cost = settings.rate_limit.credit_cost_per_convert
+        first_result_recorded = False
 
-        for r in response.results:
-            rid = uuid.uuid4().hex
-            await self.repo.create_result(
-                result_id=rid,
-                task_id=task.task_id,
-                user_id=task.user_id,
-                image_id=task.image_id,
-                skill_id=task.skill_id,
-                provider=task.provider,
-                result_url=r.url,  # Provider 临时 URL，立即可用
-                thumbnail_url=None,
-                prompt_used=prompt,
-                analysis_json=analysis_json_str,
-                provider_response=provider_resp_str,
-                favorite=False,
-                credits_used=4,
+        for provider_id, resp in multi_results:
+            if resp.status != "success" or not resp.results:
+                logger.warning("[风格转换] Provider [%s] 未返回有效结果，跳过", provider_id)
+                continue
+
+            provider_resp_str = json.dumps(
+                resp.raw_response or {}, ensure_ascii=False, default=str
             )
-            result_records.append((rid, r.url))
 
-        # 记录模型交互并标记任务成功 —— 用户此刻即可看到结果
-        output_urls = [url for _, url in result_records]
-        duration_ms = int((time.monotonic() - started_at) * 1000)
-        await self._record_interaction(
-            task=task,
-            image_url=image_url,
-            prompt=prompt,
-            extra_prompt=task.extra_prompt,
-            feedback=feedback,
-            options=options,
-            status="success",
-            output_image_urls=output_urls,
-            provider_response=response.raw_response,
-            duration_ms=duration_ms,
-        )
+            for r in resp.results:
+                rid = uuid.uuid4().hex
+                # 积分只扣一次：第一条结果记录消耗积分，其余记 0
+                credits_for_this = credit_cost if not first_result_recorded else 0
+                first_result_recorded = True
+                await self.repo.create_result(
+                    result_id=rid,
+                    task_id=task.task_id,
+                    user_id=task.user_id,
+                    image_id=task.image_id,
+                    skill_id=task.skill_id,
+                    provider=provider_id,
+                    result_url=r.url,  # Provider 临时 URL，立即可用
+                    thumbnail_url=None,
+                    prompt_used=prompt,
+                    analysis_json=analysis_json_str,
+                    provider_response=provider_resp_str,
+                    favorite=False,
+                    credits_used=credits_for_this,
+                )
+                result_records.append((rid, r.url))
+                all_output_urls.append(r.url)
 
-        # 阶段5：扣减用户积分（在标记任务成功之前，确保积分扣除成功）
-        # 扣减积分（每次转换扣除积分数从系统配置读取，非管理员用户）
+            # 为每个成功的 Provider 分别记录一次模型交互
+            duration_ms = int((time.monotonic() - started_at) * 1000)
+            await self._record_interaction(
+                task=task,
+                image_url=image_url,
+                prompt=prompt,
+                extra_prompt=task.extra_prompt,
+                feedback=feedback,
+                options=options,
+                status="success",
+                output_image_urls=[r.url for r in resp.results],
+                provider_response=resp.raw_response,
+                duration_ms=duration_ms,
+                provider_override=provider_id,
+            )
+
+        if not result_records:
+            raise AIServiceException("所有 Provider 均未返回有效结果")
+
+        # 阶段5：扣减用户积分（不管调用了几个模型，只扣一次固定积分）
         stmt = select(User).where(User.user_id == task.user_id)
         result = await self.db.execute(stmt)
         user = result.scalar_one_or_none()
@@ -801,7 +838,7 @@ class StyleService:
             from app.services.credit_service import CreditService
             credit_service = CreditService(self.db)
             credit_cost = settings.rate_limit.credit_cost_per_convert
-            logger.info(f"[积分] 准备扣除用户 {task.user_id} 的 {credit_cost} 积分（转换消耗）")
+            logger.info(f"[积分] 准备扣除用户 {task.user_id} 的 {credit_cost} 积分（转换消耗，多模型不倍增）")
             await credit_service.deduct_credits(
                 user_id=task.user_id,
                 amount=credit_cost,
@@ -812,7 +849,7 @@ class StyleService:
             logger.info(f"[积分] 用户 {task.user_id} 扣除 {credit_cost} 积分成功，当前余额: {user.credits}")
         else:
             logger.info(f"[积分] 用户 {task.user_id} 是管理员或不存在，跳过积分扣除")
-        
+
         # 标记任务完成（在积分扣除成功后）
         await self.repo.update_task_status(
             task.task_id, status="success", stage="done", progress=100
@@ -820,7 +857,6 @@ class StyleService:
         await self.db.commit()
 
         # 后台异步：下载结果图 → 上传永久存储 → 生成缩略图 → 替换 URL
-        # 使用独立 DB 会话，避免与主会话冲突
         for rid, provider_url in result_records:
             asyncio.create_task(
                 self._background_persist_result(
@@ -849,6 +885,7 @@ class StyleService:
                 result_url=r.result_url,
                 thumbnail_url=r.thumbnail_url,
                 favorite=r.favorite,
+                provider=r.provider or "",
                 created_at=r.created_at,
             )
             for r in results
@@ -885,6 +922,7 @@ class StyleService:
                 result_url=r.result_url,
                 thumbnail_url=r.thumbnail_url,
                 favorite=False,  # 公开接口不返回收藏状态
+                provider=r.provider or "",
                 created_at=r.created_at,
             )
             for r in results
@@ -939,11 +977,15 @@ class StyleService:
         provider_response: Any = None,
         error_message: str | None = None,
         duration_ms: int | None = None,
+        provider_override: str | None = None,
     ) -> None:
         """
         记录一次与 AI 模型的交互（输入 + 输出），供审计与回溯。
 
         本方法内部做了异常兜底：即便记录失败也不影响主流程（风格转换任务状态）。
+
+        Args:
+            provider_override: 多模型模式下 task.provider 为空，用此值覆盖 provider 字段
         """
         try:
             rec = ModelInteraction(
@@ -951,7 +993,7 @@ class StyleService:
                 task_id=task.task_id,
                 user_id=task.user_id,
                 skill_id=task.skill_id,
-                provider=task.provider,
+                provider=provider_override or task.provider,
                 input_image_url=image_url,
                 prompt_sent=prompt,
                 extra_prompt=extra_prompt,

@@ -2,13 +2,15 @@
 // 结果页：展示任务进度 / 原图与效果图左右两列对比 / 下载 / 收藏 / 分享
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft, Download, Share, Star, ZoomIn, Refresh, Picture, Loading } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, Download, Share, Star, ZoomIn, Refresh, Picture, Loading, Close } from '@element-plus/icons-vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { favoriteResult } from '@/api/history'
+import { removeTaskResults } from '@/api/style'
 import { useTaskPolling } from '@/composables/useTaskPolling'
 import { useConvert } from '@/composables/useConvert'
 import { generateSharePoster, downloadDataUrl } from '@/utils/poster'
+import type { StyleResult } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -262,17 +264,40 @@ watch(currentStage, () => {
 })
 // 原图地址（从任务状态接口读取，不依赖首页上传态）
 const originalUrl = computed(() => task.value?.originalUrl ?? '')
-// 结果图地址（取第一个结果）
-const firstResult = computed(() => task.value?.results?.[0] ?? null)
+
+// 当前保留的结果列表（动态，删除后实时更新）
+const keptResults = computed<StyleResult[]>(() => task.value?.results ?? [])
+// 主展示图 = keptResults[0]
+const firstResult = computed(() => keptResults.value[0] ?? null)
 const resultUrl = computed(() => firstResult.value?.resultUrl ?? '')
-// 是否已收藏
+// 是否已收藏（取第一张的收藏状态）
 const favorite = computed(() => firstResult.value?.favorite ?? false)
 
-// 预览图列表：原图 + 效果图，支持点击切换预览
+// Provider 显示名称映射
+const PROVIDER_LABELS: Record<string, string> = {
+  qianwen: '千问',
+  dalle: 'DALL-E',
+  minimax: 'MiniMax',
+  volcengine: '火山引擎',
+  doubao: '豆包',
+}
+/** 获取 Provider 显示名称 */
+function providerLabel(providerId: string): string {
+  return PROVIDER_LABELS[providerId] ?? providerId
+}
+// 当前主展示图的 Provider 标签
+const firstProviderLabel = computed(() => {
+  const pid = firstResult.value?.provider ?? ''
+  return pid ? providerLabel(pid) : ''
+})
+// 是否有多模型结果
+const hasMultiResults = computed(() => keptResults.value.length > 1)
+
+// 预览图列表：原图 + 所有保留的效果图
 const previewList = computed(() => {
   const list: string[] = []
   if (originalUrl.value) list.push(originalUrl.value)
-  if (resultUrl.value) list.push(resultUrl.value)
+  keptResults.value.forEach(r => list.push(r.resultUrl))
   return list
 })
 // 预览初始位置
@@ -295,16 +320,69 @@ function onPreviewResult() {
   previewInitialIndex.value = originalUrl.value ? 1 : 0
 }
 
+/** 切换主展示图：点击网格中的某张图 */
+function switchMainResult(idx: number) {
+  if (idx < 0 || idx >= keptResults.value.length) return
+  // 计算该图在 previewList 中的索引
+  const offset = originalUrl.value ? 1 : 0
+  previewInitialIndex.value = offset + idx
+}
+
+/** 删除状态 */
+const deletingResultId = ref('')
+
+/** 删除指定结果 */
+async function onRemoveResult(resultId: string) {
+  const result = keptResults.value.find(r => r.resultId === resultId)
+  if (!result) return
+  const label = providerLabel(result.provider) || '该模型'
+  try {
+    await ElMessageBox.confirm(
+      `确定删除${label}的结果吗？删除后无法恢复。`,
+      '确认删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return // 用户取消
+  }
+  deletingResultId.value = resultId
+  try {
+    const remaining = await removeTaskResults(taskId.value, [resultId])
+    // 更新本地数据
+    if (task.value) {
+      task.value.results = remaining
+    }
+    ElMessage.success('已删除')
+  } catch {
+    ElMessage.error('删除失败')
+  } finally {
+    deletingResultId.value = ''
+  }
+}
+
 /** 切换收藏 */
 async function onFavorite() {
   if (!firstResult.value) return
   favoriting.value = true
   try {
-    const updated = await favoriteResult(firstResult.value.resultId, !favorite.value)
-    if (task.value?.results && task.value.results[0]) {
-      task.value.results[0].favorite = updated.favorite
+    if (hasMultiResults.value) {
+      // 多张时收藏全部
+      for (const r of keptResults.value) {
+        await favoriteResult(r.resultId, !favorite.value)
+      }
+      // 更新本地数据
+      for (const r of keptResults.value) {
+        r.favorite = !favorite.value
+      }
+      ElMessage.success(!favorite.value ? '已全部收藏' : '已取消全部收藏')
+    } else {
+      // 单张时切换收藏状态
+      const updated = await favoriteResult(firstResult.value.resultId, !favorite.value)
+      if (task.value?.results && task.value.results[0]) {
+        task.value.results[0].favorite = updated.favorite
+      }
+      ElMessage.success(updated.favorite ? '已收藏' : '已取消收藏')
     }
-    ElMessage.success(updated.favorite ? '已收藏' : '已取消收藏')
   } catch {
     ElMessage.error('操作失败')
   } finally {
@@ -316,31 +394,49 @@ async function onFavorite() {
 async function onDownload() {
   if (!resultUrl.value) return
   try {
-    // 使用 fetch + blob 方式下载，避免跨域 <a download> 失效
-    const response = await fetch(resultUrl.value, { mode: 'cors' })
-    if (!response.ok) throw new Error('下载失败')
-    const blob = await response.blob()
-    const blobUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = `photo-style-${taskId.value}.png`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(blobUrl)
+    if (hasMultiResults.value) {
+      // 多张时逐张下载
+      for (let i = 0; i < keptResults.value.length; i++) {
+        const r = keptResults.value[i]
+        const label = providerLabel(r.provider) || `img-${i + 1}`
+        await downloadSingleImage(r.resultUrl, `photo-style-${taskId.value}-${label}.png`)
+        if (i < keptResults.value.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200))
+        }
+      }
+      ElMessage.success(`已下载 ${keptResults.value.length} 张图片`)
+    } else {
+      // 单张时直接下载
+      await downloadSingleImage(resultUrl.value, `photo-style-${taskId.value}.png`)
+    }
   } catch {
-    // 兜底：直接打开新窗口
     window.open(resultUrl.value, '_blank')
     ElMessage.warning('浏览器阻止了下载，请右键图片另存为')
   }
 }
 
+/** 下载单张图片 */
+async function downloadSingleImage(url: string, filename: string) {
+  const response = await fetch(url, { mode: 'cors' })
+  if (!response.ok) throw new Error('下载失败')
+  const blob = await response.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(blobUrl)
+}
+
 /** 复制分享链接 */
 function onShare() {
   if (!resultUrl.value) return
+  const urls = keptResults.value.map(r => r.resultUrl).join('\n')
   navigator.clipboard
-    ?.writeText(resultUrl.value)
-    .then(() => ElMessage.success('链接已复制'))
+    ?.writeText(urls)
+    .then(() => ElMessage.success(hasMultiResults.value ? `已复制 ${keptResults.value.length} 张图片链接` : '链接已复制'))
     .catch(() => ElMessage.warning('复制失败，请手动复制'))
 }
 
@@ -348,6 +444,8 @@ function onShare() {
 const posterDialog = ref(false)
 const posterLoading = ref(false)
 const posterDataUrl = ref('')
+// 海报图片选择（多模型时）
+const posterSelectedId = ref('')
 
 /** 生成分享海报：效果图 + 二维码（扫码跳本站该作品） */
 async function onGeneratePoster() {
@@ -355,16 +453,31 @@ async function onGeneratePoster() {
   posterDialog.value = true
   posterLoading.value = true
   posterDataUrl.value = ''
+  // 默认选择第一张
+  if (!posterSelectedId.value && keptResults.value.length > 0) {
+    posterSelectedId.value = keptResults.value[0].resultId
+  }
   try {
-    const shareUrl = `${window.location.origin}/result/${taskId.value}`
+    const shareUrl = `${window.location.origin}/share/${taskId.value}`
+    // 获取选中的图片 URL
+    const selectedResult = keptResults.value.find(r => r.resultId === posterSelectedId.value)
+    const imageUrl = selectedResult?.resultUrl || resultUrl.value
     posterDataUrl.value = await generateSharePoster({
-      imageUrl: resultUrl.value,
+      imageUrl,
       shareUrl,
     })
   } catch {
     ElMessage.error('海报生成失败，请重试')
   } finally {
     posterLoading.value = false
+  }
+}
+
+/** 切换海报图片选择 */
+function onPosterImageChange() {
+  // 重新生成海报
+  if (posterDialog.value && posterSelectedId.value) {
+    onGeneratePoster()
   }
 }
 
@@ -460,6 +573,9 @@ function goBack() {
             <div class="result-col__label font-display">
               <span class="ink-stamp">后</span>
               <span>效果图</span>
+              <el-tag v-if="firstProviderLabel" size="small" class="result-col__provider-tag">
+                {{ firstProviderLabel }}
+              </el-tag>
               <span class="result-col__label-hint">点击预览大图</span>
             </div>
             <div class="result-col__img-wrap result-col__img-wrap--effect">
@@ -487,6 +603,50 @@ function goBack() {
           </div>
         </div>
       </div>
+
+      <!-- 多模型结果：展示所有保留的结果，可删除不想要的 -->
+      <div v-if="hasMultiResults" class="multi-results-grid">
+        <div
+          v-for="(r, idx) in keptResults"
+          :key="r.resultId"
+          class="multi-results-item"
+          :class="{ 'multi-results-item--active': idx === 0 }"
+        >
+          <span class="multi-results-item__tag">
+            {{ providerLabel(r.provider) }}
+          </span>
+          <!-- 删除按钮：至少保留 1 张 -->
+          <button
+            v-if="keptResults.length > 1"
+            class="multi-results-item__delete"
+            :disabled="deletingResultId === r.resultId"
+            @click.stop="onRemoveResult(r.resultId)"
+          >
+            <el-icon :size="14"><Close /></el-icon>
+          </button>
+          <el-image
+            :src="r.resultUrl"
+            :preview-src-list="previewList"
+            :initial-index="originalUrl ? idx + 1 : idx"
+            fit="cover"
+            class="multi-results-item__img"
+            preview-teleported
+            @click="switchMainResult(idx)"
+          />
+        </div>
+      </div>
+      <!-- 单结果时显示删除按钮 -->
+      <div v-else-if="keptResults.length === 1 && keptResults[0]" class="single-result-actions">
+        <button
+          class="single-result-delete"
+          :disabled="deletingResultId === keptResults[0].resultId"
+          @click="onRemoveResult(keptResults[0].resultId)"
+        >
+          <el-icon :size="12"><Close /></el-icon>
+          <span>删除此结果</span>
+        </button>
+      </div>
+
       <div class="mt-5 flex flex-wrap justify-center gap-3">
         <el-button :icon="Download" type="primary" @click="onDownload">下载</el-button>
         <el-button
@@ -495,7 +655,7 @@ function goBack() {
           :loading="favoriting"
           @click="onFavorite"
         >
-          {{ favorite ? '已收藏' : '收藏' }}
+          {{ favorite ? (hasMultiResults ? '已收藏全部' : '已收藏') : (hasMultiResults ? '收藏全部' : '收藏') }}
         </el-button>
         <el-button :icon="Share" class="result-secondary-btn" @click="onShare">分享</el-button>
         <el-button
@@ -578,6 +738,19 @@ function goBack() {
       class="poster-dialog-wrap"
     >
       <div class="poster-dialog">
+        <!-- 多模型时显示图片选择条 -->
+        <div v-if="hasMultiResults" class="poster-picker">
+          <div
+            v-for="r in keptResults"
+            :key="r.resultId"
+            class="poster-picker__item"
+            :class="{ 'poster-picker__item--active': posterSelectedId === r.resultId }"
+            @click="posterSelectedId = r.resultId; onPosterImageChange()"
+          >
+            <img :src="r.resultUrl" :alt="providerLabel(r.provider)" />
+            <span class="poster-picker__label">{{ providerLabel(r.provider) }}</span>
+          </div>
+        </div>
         <div v-if="posterLoading" class="poster-dialog__loading">
           <el-icon class="is-loading" :size="22"><Loading /></el-icon>
           <span>海报生成中…</span>
@@ -1041,5 +1214,198 @@ function goBack() {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Provider 标签：效果图标题行内显示 —— 朱砂小印风格 */
+.result-col__provider-tag {
+  margin-left: 8px;
+  vertical-align: middle;
+  --el-tag-bg-color: rgba(200, 68, 43, 0.08);
+  --el-tag-border-color: rgba(200, 68, 43, 0.2);
+  --el-tag-text-color: var(--color-primary-dark);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+/* 多模型结果网格 —— 宣纸卷轴式横滑 */
+.multi-results-grid {
+  display: flex;
+  gap: 18px;
+  margin-top: 24px;
+  padding: 4px 2px 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.multi-results-grid::-webkit-scrollbar {
+  height: 4px;
+}
+.multi-results-grid::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+.multi-results-item {
+  position: relative;
+  flex: 0 0 180px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  scroll-snap-align: start;
+}
+.multi-results-item:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.multi-results-item--active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px rgba(200, 68, 43, 0.12), var(--shadow-sm);
+}
+.multi-results-item__tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  font-size: 10px;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 2px;
+  background: rgba(28, 28, 26, 0.6);
+  color: #f5f2ec;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.multi-results-item__img {
+  width: 180px;
+  height: 240px;
+  display: block;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .multi-results-item {
+    flex: 0 0 140px;
+  }
+  .multi-results-item__img {
+    width: 140px;
+    height: 187px;
+  }
+}
+
+/* 删除按钮：右上角墨底半透明圆形 */
+.multi-results-item__delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(28, 28, 26, 0.6);
+  color: #f5f2ec;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+.multi-results-item__delete:hover:not(:disabled) {
+  background: var(--color-primary);
+  transform: scale(1.1);
+}
+.multi-results-item__delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 单结果时的删除按钮 */
+.single-result-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+.single-result-delete {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.single-result-delete:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.single-result-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 海报图片选择条 */
+.poster-picker {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.poster-picker::-webkit-scrollbar {
+  height: 4px;
+}
+.poster-picker::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 2px;
+}
+.poster-picker__item {
+  position: relative;
+  flex: 0 0 80px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+.poster-picker__item:hover {
+  border-color: var(--color-border);
+}
+.poster-picker__item--active {
+  border-color: var(--color-primary);
+}
+.poster-picker__item img {
+  width: 80px;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+}
+.poster-picker__label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-family: var(--font-display);
+  background: rgba(28, 28, 26, 0.7);
+  color: #f5f2ec;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

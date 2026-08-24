@@ -166,9 +166,11 @@ class MinimaxConfig(BaseSettings):
     # MiniMax API Key（敏感信息）
     api_key: SecretStr = SecretStr("")
     # MiniMax 接口基础地址
-    base_url: str = "https://api.minimax.chat/v1"
-    # 图像生成模型名
+    base_url: str = "https://api.minimaxi.com/v1"
+    # 图像生成模型名：image-01 / image-01-live
     model_image: str = "image-01"
+    # 是否在生成图片中添加 AI 生成水印，默认 false
+    watermark: bool = False
 
 
 # ============================================================

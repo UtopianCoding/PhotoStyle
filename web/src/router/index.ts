@@ -16,6 +16,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Result.vue'),
   },
   {
+    path: '/share/:id',
+    name: 'ShareView',
+    // 公开分享页：简洁展示原图与效果图对比（无需登录）
+    component: () => import('@/views/ShareView.vue'),
+  },
+  {
     path: '/history',
     name: 'History',
     // 历史记录页

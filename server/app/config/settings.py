@@ -102,8 +102,8 @@ class DashScopeConfig(BaseSettings):
     model_vision: str = "qwen-vl-plus"
     # 图像生成模型名（用于图生图/文生图）
     model_image: str = "qwen-image-3.0-pro"
-    # 百炼工作空间 ID（用于拼接 base_url，sk-ws- Key 前缀中提取）
-    workspace_id: str = ""
+    # 百炼工作空间 ID（用于拼接 base_url，从 API Key 前缀中提取）
+    workspace_id: str = "llm-qiqf68qtx7wjzdvx"
     # 区域（cn-beijing / ap-southeast-1 等）
     region: str = "cn-beijing"
 

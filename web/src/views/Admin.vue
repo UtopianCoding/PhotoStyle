@@ -38,12 +38,12 @@ const form = reactive({
       modelImage: '',
       workspaceId: '',
       region: '',
-      watermark: null as boolean | null,
+      watermark: false as boolean,
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
       timeout: null as number | null,
-      promptExtend: null as boolean | null,
+      promptExtend: false as boolean,
     },
     dalle: {
       apiKey: '',
@@ -54,7 +54,7 @@ const form = reactive({
       apiKey: '',
       baseUrl: '',
       modelImage: '',
-      watermark: null as boolean | null,
+      watermark: false as boolean,
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
@@ -63,7 +63,7 @@ const form = reactive({
       apiKey: '',
       baseUrl: '',
       modelImage: '',
-      watermark: null as boolean | null,
+      watermark: false as boolean,
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
@@ -133,15 +133,44 @@ function fillForm(data: SystemConfig) {
   form.model.enabledProviders = data.model.enabledProviders?.length
     ? [...data.model.enabledProviders]
     : ['qianwen']
+  // 千问配置：处理可能的 null 值
+  const qw = data.model.qianwen
   form.model.qianwen = {
-    ...data.model.qianwen,
-    // 兼容旧版本后端未返回这两个字段的情况
-    timeout: data.model.qianwen.timeout ?? null,
-    promptExtend: data.model.qianwen.promptExtend ?? true,
+    apiKey: qw.apiKey,
+    modelVision: qw.modelVision,
+    modelImage: qw.modelImage,
+    workspaceId: qw.workspaceId,
+    region: qw.region,
+    watermark: qw.watermark ?? false,
+    width: qw.width,
+    height: qw.height,
+    seed: qw.seed,
+    timeout: qw.timeout ?? null,
+    promptExtend: qw.promptExtend ?? true,
   }
   form.model.dalle = { ...data.model.dalle }
-  form.model.minimax = { ...data.model.minimax }
-  form.model.volcengine = { ...data.model.volcengine }
+  // MiniMax 配置：处理可能的 null 值
+  const mm = data.model.minimax
+  form.model.minimax = {
+    apiKey: mm.apiKey,
+    baseUrl: mm.baseUrl,
+    modelImage: mm.modelImage,
+    watermark: mm.watermark ?? false,
+    width: mm.width,
+    height: mm.height,
+    seed: mm.seed,
+  }
+  // 火山引擎配置：处理可能的 null 值
+  const vc = data.model.volcengine
+  form.model.volcengine = {
+    apiKey: vc.apiKey,
+    baseUrl: vc.baseUrl,
+    modelImage: vc.modelImage,
+    watermark: vc.watermark ?? false,
+    width: vc.width,
+    height: vc.height,
+    seed: vc.seed,
+  }
 
   form.storage.storageType = data.storage.storageType
   form.storage.minio = { ...data.storage.minio }

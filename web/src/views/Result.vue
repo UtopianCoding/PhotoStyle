@@ -299,8 +299,6 @@ const hasMultiResults = computed(() => keptResults.value.length > 1)
 
 // 仍在处理中的 Provider 列表
 const pendingProviders = computed(() => task.value?.pendingProviders ?? [])
-// 是否有 Provider 仍在处理中
-const hasPending = computed(() => pendingProviders.value.length > 0)
 // 是否有已完成的中间结果（running 状态下已有部分结果）
 const hasPartialResults = computed(
   () => task.value?.status === 'running' && keptResults.value.length > 0,
@@ -338,14 +336,6 @@ function onPreviewResult() {
   if (!resultUrl.value) return
   // 效果图在 previewList 中的索引（原图在前，效果图在后）
   previewInitialIndex.value = originalUrl.value ? 1 : 0
-}
-
-/** 切换主展示图：点击网格中的某张图 */
-function switchMainResult(idx: number) {
-  if (idx < 0 || idx >= keptResults.value.length) return
-  // 计算该图在 previewList 中的索引
-  const offset = originalUrl.value ? 1 : 0
-  previewInitialIndex.value = offset + idx
 }
 
 /** 删除状态 */

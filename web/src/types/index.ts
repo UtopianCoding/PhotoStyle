@@ -262,6 +262,13 @@ export interface OpenAIConfig {
   apiKey: string
   baseUrl: string
   modelImage: string
+  size: string | null
+  resolution: string | null
+  quality: string | null
+  background: string | null
+  outputFormat: string | null
+  outputCompression: number | null
+  moderation: string | null
 }
 
 /**

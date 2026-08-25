@@ -208,6 +208,10 @@ class ModelConfigStore:
                 "api_key": settings.dalle.api_key.get_secret_value(),
                 "base_url": settings.dalle.base_url,
                 "model_image": settings.dalle.model_image,
+                # GPT Image 2 特有参数默认值
+                "size": "auto",
+                "resolution": "1K",
+                "quality": "medium",
             },
             "minimax": {
                 "api_key": settings.minimax.api_key.get_secret_value(),

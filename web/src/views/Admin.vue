@@ -49,6 +49,13 @@ const form = reactive({
       apiKey: '',
       baseUrl: '',
       modelImage: '',
+      size: '',
+      resolution: '',
+      quality: '',
+      background: '',
+      outputFormat: '',
+      outputCompression: null as number | null,
+      moderation: '',
     },
     minimax: {
       apiKey: '',
@@ -104,7 +111,7 @@ const storageTypeOptions = [
 // 默认 provider 可选项（value 为 provider_id，与后端 ProviderManager 一致）
 const providerOptions = [
   { label: '千问 (DashScope)', value: 'qianwen' },
-  { label: 'OpenAI (DALL-E)', value: 'dalle' },
+  { label: 'GPT Image 2 (OpenAI)', value: 'dalle' },
   { label: 'MiniMax', value: 'minimax' },
   { label: '火山引擎 (Seedream)', value: 'volcengine' },
 ]
@@ -148,7 +155,20 @@ function fillForm(data: SystemConfig) {
     timeout: qw.timeout ?? null,
     promptExtend: qw.promptExtend ?? true,
   }
-  form.model.dalle = { ...data.model.dalle }
+  // GPT Image 2 配置：处理可能的 null 值
+  const dl = data.model.dalle
+  form.model.dalle = {
+    apiKey: dl.apiKey,
+    baseUrl: dl.baseUrl,
+    modelImage: dl.modelImage,
+    size: dl.size ?? '',
+    resolution: dl.resolution ?? '',
+    quality: dl.quality ?? '',
+    background: dl.background ?? '',
+    outputFormat: dl.outputFormat ?? '',
+    outputCompression: dl.outputCompression ?? null,
+    moderation: dl.moderation ?? '',
+  }
   // MiniMax 配置：处理可能的 null 值
   const mm = data.model.minimax
   form.model.minimax = {
@@ -208,12 +228,19 @@ function buildPayload(): SystemConfigUpdate {
   // promptExtend：始终发送 true/false，后端视为"覆盖写入"
   qianwen.promptExtend = ds.promptExtend ?? true
   if (Object.keys(qianwen).length > 0) model.qianwen = qianwen
-  // OpenAI / DALL-E
+  // OpenAI / GPT Image 2
   const op = form.model.dalle
   const dalle: NonNullable<NonNullable<SystemConfigUpdate['model']>['dalle']> = {}
   if (op.apiKey && !op.apiKey.includes('****')) dalle.apiKey = op.apiKey
   if (op.baseUrl) dalle.baseUrl = op.baseUrl
   if (op.modelImage) dalle.modelImage = op.modelImage
+  if (op.size) dalle.size = op.size
+  if (op.resolution) dalle.resolution = op.resolution
+  if (op.quality) dalle.quality = op.quality
+  if (op.background) dalle.background = op.background
+  if (op.outputFormat) dalle.outputFormat = op.outputFormat
+  if (op.outputCompression != null) dalle.outputCompression = op.outputCompression
+  if (op.moderation) dalle.moderation = op.moderation
   if (Object.keys(dalle).length > 0) model.dalle = dalle
   // MiniMax
   const mm = form.model.minimax
@@ -554,7 +581,7 @@ onMounted(() => {
                 </div>
               </el-tab-pane>
 
-              <el-tab-pane label="OpenAI (DALL-E)" name="dalle">
+              <el-tab-pane label="GPT Image 2" name="dalle">
                 <div class="form-grid">
                   <el-form-item label="API Key">
                     <el-input
@@ -565,10 +592,59 @@ onMounted(() => {
                     <div class="field-hint">敏感字段，保存时若仍含 **** 将跳过写入</div>
                   </el-form-item>
                   <el-form-item label="接口基础地址">
-                    <el-input v-model="form.model.dalle.baseUrl" placeholder="如 https://api.openai.com/v1" />
+                    <el-input v-model="form.model.dalle.baseUrl" placeholder="默认 https://api-direct.boft.ai/v1" />
+                    <div class="field-hint">留空使用默认地址（GPT Image 2 代理）</div>
                   </el-form-item>
                   <el-form-item label="图像生成模型">
-                    <el-input v-model="form.model.dalle.modelImage" placeholder="如 dall-e-3" />
+                    <el-input v-model="form.model.dalle.modelImage" placeholder="默认 gpt-image-2" />
+                    <div class="field-hint">留空使用默认模型（gpt-image-2）</div>
+                  </el-form-item>
+                  <el-form-item label="图片尺寸">
+                    <el-input v-model="form.model.dalle.size" placeholder="auto / 1:1 / 16:9 / 1024x1024 等" />
+                    <div class="field-hint">支持比例格式（如 1:1、16:9）、像素格式（如 1024x1024）或 auto</div>
+                  </el-form-item>
+                  <el-form-item label="分辨率档位">
+                    <el-select v-model="form.model.dalle.resolution" placeholder="默认 1K" clearable>
+                      <el-option label="1K（约 1MP）" value="1K" />
+                      <el-option label="2K（约 4MP）" value="2K" />
+                      <el-option label="4K（约 8.3MP）" value="4K" />
+                    </el-select>
+                    <div class="field-hint">仅在 size 为比例格式时生效，留空使用默认 1K</div>
+                  </el-form-item>
+                  <el-form-item label="渲染质量">
+                    <el-select v-model="form.model.dalle.quality" placeholder="默认 medium" clearable>
+                      <el-option label="low（快速，低成本）" value="low" />
+                      <el-option label="medium（平衡）" value="medium" />
+                      <el-option label="high（高质量，高成本）" value="high" />
+                    </el-select>
+                    <div class="field-hint">控制模型的"思考深度"，直接影响输出 token 数和费用，留空使用默认 medium</div>
+                  </el-form-item>
+                  <el-form-item label="背景类型">
+                    <el-select v-model="form.model.dalle.background" placeholder="默认 auto" clearable>
+                      <el-option label="auto（自动）" value="auto" />
+                      <el-option label="transparent（透明）" value="transparent" />
+                      <el-option label="opaque（不透明）" value="opaque" />
+                    </el-select>
+                    <div class="field-hint">留空使用默认 auto</div>
+                  </el-form-item>
+                  <el-form-item label="输出格式">
+                    <el-select v-model="form.model.dalle.outputFormat" placeholder="默认 png" clearable>
+                      <el-option label="PNG" value="png" />
+                      <el-option label="JPEG" value="jpeg" />
+                      <el-option label="WebP" value="webp" />
+                    </el-select>
+                    <div class="field-hint">留空使用默认 png</div>
+                  </el-form-item>
+                  <el-form-item label="输出压缩率">
+                    <el-input-number v-model="form.model.dalle.outputCompression" :min="0" :max="100" :step="10" controls-position="right" placeholder="0-100" />
+                    <div class="field-hint">JPEG/WebP 格式的压缩率（0-100），留空使用默认值</div>
+                  </el-form-item>
+                  <el-form-item label="内容审核级别">
+                    <el-select v-model="form.model.dalle.moderation" placeholder="默认 auto" clearable>
+                      <el-option label="auto（标准）" value="auto" />
+                      <el-option label="low（宽松）" value="low" />
+                    </el-select>
+                    <div class="field-hint">留空使用默认 auto</div>
                   </el-form-item>
                 </div>
               </el-tab-pane>

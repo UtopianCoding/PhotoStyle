@@ -256,7 +256,7 @@ export interface DashScopeConfig {
 }
 
 /**
- * OpenAI / DALL-E 配置（敏感字段脱敏）
+ * OpenAI / GPT Image 2 配置（敏感字段脱敏）
  */
 export interface OpenAIConfig {
   apiKey: string
@@ -379,6 +379,13 @@ export interface SystemConfigUpdate {
       apiKey?: string
       baseUrl?: string
       modelImage?: string
+      size?: string | null
+      resolution?: string | null
+      quality?: string | null
+      background?: string | null
+      outputFormat?: string | null
+      outputCompression?: number | null
+      moderation?: string | null
     }
     minimax?: {
       apiKey?: string

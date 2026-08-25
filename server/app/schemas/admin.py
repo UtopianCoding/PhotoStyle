@@ -38,13 +38,20 @@ class DashScopeConfigRead(BaseModel):
 
 
 class OpenAIConfigRead(BaseModel):
-    """OpenAI / DALL-E 配置（脱敏）"""
+    """OpenAI / GPT Image 2 配置（脱敏）"""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     api_key: str = Field("", description="API Key（脱敏）")
-    base_url: str
-    model_image: str
+    base_url: str = Field("https://api-direct.boft.ai/v1", description="API 基础地址")
+    model_image: str = Field("gpt-image-2", description="图像生成模型名")
+    size: str | None = Field(None, description="图片尺寸（auto/比例格式/像素格式）")
+    resolution: str | None = Field(None, description="分辨率档位（1K/2K/4K），仅在 size 为比例格式时生效")
+    quality: str | None = Field(None, description="渲染质量（low/medium/high）")
+    background: str | None = Field(None, description="背景类型（auto/transparent/opaque）")
+    output_format: str | None = Field(None, description="输出格式（png/jpeg/webp）")
+    output_compression: int | None = Field(None, description="输出压缩率（0-100）")
+    moderation: str | None = Field(None, description="内容审核级别（auto/low）")
 
 
 class MinimaxConfigRead(BaseModel):
@@ -177,13 +184,20 @@ class DashScopeConfigUpdate(BaseModel):
 
 
 class OpenAIConfigUpdate(BaseModel):
-    """OpenAI 配置更新"""
+    """OpenAI / GPT Image 2 配置更新"""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     api_key: str | None = None
     base_url: str | None = None
     model_image: str | None = None
+    size: str | None = None
+    resolution: str | None = None
+    quality: str | None = None
+    background: str | None = None
+    output_format: str | None = None
+    output_compression: int | None = None
+    moderation: str | None = None
 
 
 class MinimaxConfigUpdate(BaseModel):

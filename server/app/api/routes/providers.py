@@ -60,14 +60,14 @@ async def list_providers() -> ApiResponse[ProvidersListResponse]:
             )
         )
 
-    # OpenAI / DALL-E
+    # OpenAI / GPT Image 2
     dl = store.get_config("dalle") or {}
     if dl.get("api_key"):
         model_img = dl.get("model_image", "")
         providers.append(
             ProviderSummary(
                 id="dalle",
-                name="OpenAI (DALL-E)",
+                name="GPT Image 2 (OpenAI)",
                 models=[model_img] if model_img else [],
             )
         )

@@ -63,7 +63,7 @@ const resultUrl = computed(() => firstResult.value?.resultUrl ?? '')
 // Provider 显示名称
 const PROVIDER_LABELS: Record<string, string> = {
   qianwen: '千问',
-  dalle: 'DALL-E',
+  dalle: 'GPT Image 2',
   minimax: 'MiniMax',
   volcengine: '火山引擎',
   doubao: '豆包',

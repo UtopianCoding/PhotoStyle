@@ -134,8 +134,15 @@ class AdminService:
                 ),
                 dalle=OpenAIConfigRead(
                     api_key=mask_secret(dl.get("api_key", "")),
-                    base_url=dl.get("base_url", ""),
-                    model_image=dl.get("model_image", ""),
+                    base_url=dl.get("base_url", "https://api-direct.boft.ai/v1"),
+                    model_image=dl.get("model_image", "gpt-image-2"),
+                    size=dl.get("size"),
+                    resolution=dl.get("resolution"),
+                    quality=dl.get("quality"),
+                    background=dl.get("background"),
+                    output_format=dl.get("output_format"),
+                    output_compression=dl.get("output_compression"),
+                    moderation=dl.get("moderation"),
                 ),
                 minimax=MinimaxConfigRead(
                     api_key=mask_secret(mm.get("api_key", "")),
@@ -261,7 +268,7 @@ class AdminService:
                 current["prompt_extend"] = bool(d.prompt_extend)
             await store.save_provider_config("qianwen", _sanitize_config(current))
 
-        # OpenAI / DALL-E
+        # OpenAI / GPT Image 2
         if model.dalle is not None:
             o = model.dalle
             current = dict(store.get_config("dalle") or {})
@@ -271,6 +278,21 @@ class AdminService:
                 current["base_url"] = o.base_url
             if o.model_image is not None:
                 current["model_image"] = o.model_image
+            # GPT Image 2 特有参数
+            if o.size is not None:
+                current["size"] = o.size
+            if o.resolution is not None:
+                current["resolution"] = o.resolution
+            if o.quality is not None:
+                current["quality"] = o.quality
+            if o.background is not None:
+                current["background"] = o.background
+            if o.output_format is not None:
+                current["output_format"] = o.output_format
+            if o.output_compression is not None:
+                current["output_compression"] = o.output_compression
+            if o.moderation is not None:
+                current["moderation"] = o.moderation
             await store.save_provider_config("dalle", _sanitize_config(current))
 
         # MiniMax

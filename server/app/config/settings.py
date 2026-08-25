@@ -128,10 +128,10 @@ class DoubaoConfig(BaseSettings):
 
 
 # ============================================================
-# OpenAI（DALL-E）配置
+# OpenAI（GPT Image 2）配置
 # ============================================================
 class DalleConfig(BaseSettings):
-    """OpenAI DALL-E 配置"""
+    """OpenAI GPT Image 2 配置"""
 
     model_config = SettingsConfigDict(
         env_prefix="DALLE_",
@@ -143,10 +143,10 @@ class DalleConfig(BaseSettings):
 
     # OpenAI API Key（敏感信息）
     api_key: SecretStr = SecretStr("")
-    # OpenAI 接口基础地址（可替换为兼容代理）
-    base_url: str = "https://api.openai.com/v1"
-    # 图像生成模型名（如 dall-e-3）
-    model_image: str = "dall-e-3"
+    # API 基础地址（默认使用 GPT Image 2 代理）
+    base_url: str = "https://api-direct.boft.ai/v1"
+    # 图像生成模型名（默认 gpt-image-2）
+    model_image: str = "gpt-image-2"
 
 
 # ============================================================
@@ -449,7 +449,7 @@ class Settings(BaseSettings):
     dashscope: DashScopeConfig = DashScopeConfig()
     # 豆包配置
     doubao: DoubaoConfig = DoubaoConfig()
-    # DALL-E 配置
+    # GPT Image 2 配置
     dalle: DalleConfig = DalleConfig()
     # MiniMax 配置
     minimax: MinimaxConfig = MinimaxConfig()

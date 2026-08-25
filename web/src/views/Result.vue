@@ -280,7 +280,7 @@ const favorite = computed(() => firstResult.value?.favorite ?? false)
 // Provider 显示名称映射
 const PROVIDER_LABELS: Record<string, string> = {
   qianwen: '千问',
-  dalle: 'DALL-E',
+  dalle: 'GPT Image 2',
   minimax: 'MiniMax',
   volcengine: '火山引擎',
   doubao: '豆包',

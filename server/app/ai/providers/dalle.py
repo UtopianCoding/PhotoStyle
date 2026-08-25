@@ -150,7 +150,7 @@ class DalleProvider(ImageProvider):
             response.status_code, elapsed,
         )
 
-        return self._parse_response(response)
+        return await self._parse_response(response)
 
     async def _generate_with_image_edit(
         self,
@@ -272,7 +272,7 @@ class DalleProvider(ImageProvider):
             response.status_code, elapsed,
         )
 
-        return self._parse_response(response)
+        return await self._parse_response(response)
 
     async def _parse_response(self, response: httpx.Response) -> ImageProviderResponse:
         """解析 GPT Image 2 响应，支持 b64_json 和 url 两种格式"""
@@ -337,7 +337,8 @@ class DalleProvider(ImageProvider):
                     thumbnail_url=None,
                     width=None,
                     height=None,
-                    metadata=item,
+                    # 排除 b64_json 避免 metadata 过大
+                    metadata={k: v for k, v in item.items() if k != "b64_json"},
                 )
             )
 
@@ -352,10 +353,19 @@ class DalleProvider(ImageProvider):
             len(results), result_urls,
         )
 
+        # 清理 raw_response 中的 base64 数据，避免存入数据库时过大
+        clean_data = dict(data)
+        if "data" in clean_data:
+            clean_items = []
+            for item in clean_data["data"]:
+                clean_item = {k: v for k, v in item.items() if k != "b64_json"}
+                clean_items.append(clean_item)
+            clean_data["data"] = clean_items
+
         return ImageProviderResponse(
             status="success",
             results=results,
             provider_task_id=None,
-            raw_response=data,
+            raw_response=clean_data,
             error=None,
         )

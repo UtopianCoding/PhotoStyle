@@ -39,6 +39,12 @@ async function onLogout() {
             >历史</RouterLink
           >
           <RouterLink
+            v-if="userStore.hasPermission('history:view')"
+            to="/flipbook"
+            class="app-nav__link"
+            >画册</RouterLink
+          >
+          <RouterLink
             v-if="userStore.hasPermission('conversations:view')"
             to="/conversations"
             class="app-nav__link"

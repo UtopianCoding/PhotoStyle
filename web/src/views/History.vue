@@ -10,6 +10,7 @@ import {
   batchDeleteHistory,
   deleteHistory,
   listHistory,
+  type HistoryQuery,
 } from '@/api/history'
 import type { HistoryItem } from '@/types'
 
@@ -25,10 +26,12 @@ const PAGE_SIZE = 20
 const hasMore = computed(() => items.value.length < total.value)
 // 是否仅查看收藏
 const onlyFavorite = ref(false)
+// 日期范围筛选（['YYYY-MM-DD', 'YYYY-MM-DD']）
+const dateRange = ref<string[]>([])
 // 选中的任务 ID
 const selected = ref<string[]>([])
 
-// 按收藏筛选
+/** 按收藏筛选 */
 const filtered = computed(() => {
   if (!onlyFavorite.value) return items.value
   return items.value.filter((i) => i.hasFavorite)
@@ -45,12 +48,22 @@ const grouped = computed(() => {
   return Array.from(map.entries()).map(([date, list]) => ({ date, list }))
 })
 
+/** 构建查询参数（收藏 + 日期范围） */
+function buildQuery(page: number) {
+  const q: HistoryQuery = { page, pageSize: PAGE_SIZE, favorite: onlyFavorite.value }
+  if (dateRange.value && dateRange.value.length === 2) {
+    q.startDate = dateRange.value[0]
+    q.endDate = dateRange.value[1]
+  }
+  return q
+}
+
 /** 加载历史记录（首次或刷新） */
 async function load() {
   loading.value = true
   currentPage.value = 1
   try {
-    const res = await listHistory({ page: 1, pageSize: PAGE_SIZE, favorite: onlyFavorite.value })
+    const res = await listHistory(buildQuery(1))
     items.value = res.items
     total.value = res.total
   } catch {
@@ -66,7 +79,7 @@ async function loadMore() {
   loadingMore.value = true
   try {
     const nextPage = currentPage.value + 1
-    const res = await listHistory({ page: nextPage, pageSize: PAGE_SIZE, favorite: onlyFavorite.value })
+    const res = await listHistory(buildQuery(nextPage))
     items.value = [...items.value, ...res.items]
     total.value = res.total
     currentPage.value = nextPage
@@ -81,6 +94,11 @@ onMounted(load)
 
 /** 切换收藏筛选：v-model 已更新 onlyFavorite，这里只负责重新加载 */
 function onToggleFavorite() {
+  load()
+}
+
+/** 日期范围变化（含清空）：重新加载 */
+function onDateChange() {
   load()
 }
 
@@ -149,6 +167,18 @@ function thumbProvider(item: HistoryItem, idx: number): string {
     <div class="history-topbar">
       <h1 class="history-topbar__title font-display">历史记录</h1>
       <div class="flex items-center gap-3">
+        <!-- 日期范围筛选 -->
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD"
+          :clearable="true"
+          class="history-date-filter"
+          @change="onDateChange"
+        />
         <el-switch v-model="onlyFavorite" active-text="仅看收藏" @change="onToggleFavorite" />
         <el-button
           :icon="Delete"
@@ -171,7 +201,7 @@ function thumbProvider(item: HistoryItem, idx: number): string {
     <el-checkbox-group v-else class="history-groups" v-model="selected">
       <div v-for="group in grouped" :key="group.date" class="history-group">
         <div class="history-group__date font-mono-label">{{ group.date }}</div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 xl:gap-4">
           <div v-for="item in group.list" :key="item.taskId" class="history-card">
             <el-checkbox :value="item.taskId" class="history-card__check" />
             <!-- 3:4 竖版缩略图 -->
@@ -192,7 +222,7 @@ function thumbProvider(item: HistoryItem, idx: number): string {
                   </span>
                 </div>
               </div>
-              <!-- 单结果：常规展示 -->
+              <!-- 单结果：优先展示效果图，无结果时显示状态占位 -->
               <template v-else>
                 <img
                   v-if="item.resultThumbnails[0]"
@@ -201,13 +231,34 @@ function thumbProvider(item: HistoryItem, idx: number): string {
                   loading="lazy"
                   decoding="async"
                 />
-                <img
-                  v-else
-                  :src="item.originalUrl"
-                  :alt="item.skillId"
-                  loading="lazy"
-                  decoding="async"
-                />
+                <!-- 无效果图时显示状态占位（pending/running/failed） -->
+                <div v-else class="history-card__placeholder">
+                  <div class="history-card__placeholder-icon">
+                    <svg v-if="item.status === 'pending' || item.status === 'running'" 
+                         width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <circle cx="12" cy="12" r="10"/>
+                      <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <svg v-else-if="item.status === 'failed'" 
+                         width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="15" y1="9" x2="9" y2="15"/>
+                      <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                    <svg v-else 
+                         width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                  </div>
+                  <div class="history-card__placeholder-text">
+                    <span v-if="item.status === 'pending'">等待生成</span>
+                    <span v-else-if="item.status === 'running'">生成中...</span>
+                    <span v-else-if="item.status === 'failed'">生成失败</span>
+                    <span v-else>暂无结果</span>
+                  </div>
+                </div>
                 <span v-if="item.resultThumbnails[0] && thumbProvider(item, 0)" class="history-card__provider-tag">
                   {{ providerLabel(thumbProvider(item, 0)) }}
                 </span>
@@ -261,6 +312,20 @@ function thumbProvider(item: HistoryItem, idx: number): string {
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: 0.08em;
+}
+/* 日期筛选：紧凑宽度，小屏自动换行 */
+.history-topbar .history-date-filter {
+  width: 248px;
+}
+@media (max-width: 640px) {
+  .history-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .history-topbar .history-date-filter {
+    width: 100%;
+  }
 }
 .history-topbar__delete {
   --el-button-text-color: var(--color-text-secondary);
@@ -392,6 +457,29 @@ function thumbProvider(item: HistoryItem, idx: number): string {
   font-size: 13px;
   letter-spacing: 0.1em;
   background: rgba(28, 28, 26, 0.55);
+}
+/* 状态占位符 */
+.history-card__placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: linear-gradient(135deg, var(--color-bg) 0%, var(--color-accent-bg) 100%);
+  color: var(--color-text-secondary);
+}
+.history-card__placeholder-icon {
+  opacity: 0.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.history-card__placeholder-text {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
 }
 .history-card__bar {
   display: flex;

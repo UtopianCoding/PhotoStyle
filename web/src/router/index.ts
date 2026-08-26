@@ -81,6 +81,20 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Profile.vue'),
     meta: { requiredPermission: 'profile:view' },
   },
+  {
+    path: '/flipbook',
+    name: 'FlipbookList',
+    // 画册列表页
+    component: () => import('@/views/FlipbookList.vue'),
+    meta: { requiredPermission: 'history:view' },
+  },
+  {
+    path: '/flipbook/:id',
+    name: 'FlipbookView',
+    // 画册查看页（3D 翻页）
+    component: () => import('@/views/FlipbookView.vue'),
+    meta: { requiredPermission: 'history:view' },
+  },
 ]
 
 const router = createRouter({

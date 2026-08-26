@@ -38,7 +38,13 @@ class StyleRepository(BaseRepository[StyleTask]):
         return result.scalar_one_or_none()
 
     async def get_tasks_by_user(
-        self, user_id: str, offset: int = 0, limit: int = 20, favorite: bool = False
+        self,
+        user_id: str,
+        offset: int = 0,
+        limit: int = 20,
+        favorite: bool = False,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[StyleTask]:
         """获取用户任务列表（按创建时间倒序）；favorite=True 时仅返回含收藏结果的任务"""
         if favorite:
@@ -59,10 +65,17 @@ class StyleRepository(BaseRepository[StyleTask]):
                 .offset(offset)
                 .limit(limit)
             )
+        stmt = self._apply_date_range(stmt, start_date, end_date)
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def count_tasks_by_user(self, user_id: str, favorite: bool = False) -> int:
+    async def count_tasks_by_user(
+        self,
+        user_id: str,
+        favorite: bool = False,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> int:
         """统计用户任务总数；favorite=True 时仅统计含收藏结果的任务"""
         from sqlalchemy import func
 
@@ -75,8 +88,24 @@ class StyleRepository(BaseRepository[StyleTask]):
             )
         else:
             stmt = select(func.count()).select_from(StyleTask).where(StyleTask.user_id == user_id)
+        stmt = self._apply_date_range(stmt, start_date, end_date)
         result = await self.db.execute(stmt)
         return int(result.scalar_one())
+
+    @staticmethod
+    def _apply_date_range(stmt, start_date: str | None, end_date: str | None):
+        """按创建日期范围过滤任务（start_date/end_date 格式 YYYY-MM-DD，含当天）"""
+        from datetime import datetime, timedelta
+
+        if start_date:
+            stmt = stmt.where(
+                StyleTask.created_at >= datetime.fromisoformat(start_date)
+            )
+        if end_date:
+            stmt = stmt.where(
+                StyleTask.created_at < datetime.fromisoformat(end_date) + timedelta(days=1)
+            )
+        return stmt
 
     async def update_task_status(
         self,
@@ -216,11 +245,22 @@ class StyleRepository(BaseRepository[StyleTask]):
         return grouped
 
     async def get_history(
-        self, user_id: str, offset: int = 0, limit: int = 20, favorite: bool = False
+        self,
+        user_id: str,
+        offset: int = 0,
+        limit: int = 20,
+        favorite: bool = False,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[StyleTask]:
         """获取用户历史记录（任务列表）；favorite=True 时仅返回含收藏结果的任务"""
         return await self.get_tasks_by_user(
-            user_id, offset=offset, limit=limit, favorite=favorite
+            user_id,
+            offset=offset,
+            limit=limit,
+            favorite=favorite,
+            start_date=start_date,
+            end_date=end_date,
         )
 
     async def get_favorites(

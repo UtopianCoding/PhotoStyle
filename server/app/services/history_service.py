@@ -28,7 +28,13 @@ class HistoryService:
         self.repo = StyleRepository(db)
 
     async def list_history(
-        self, user_id: str, page: int = 1, page_size: int = 20, favorite: bool = False
+        self,
+        user_id: str,
+        page: int = 1,
+        page_size: int = 20,
+        favorite: bool = False,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> HistoryListResponse:
         """分页获取用户历史任务列表；favorite=True 时仅返回含收藏结果的任务"""
         page = max(1, page)
@@ -36,9 +42,19 @@ class HistoryService:
         offset = (page - 1) * page_size
 
         tasks = await self.repo.get_history(
-            user_id, offset=offset, limit=page_size, favorite=favorite
+            user_id,
+            offset=offset,
+            limit=page_size,
+            favorite=favorite,
+            start_date=start_date,
+            end_date=end_date,
         )
-        total = await self.repo.count_tasks_by_user(user_id, favorite=favorite)
+        total = await self.repo.count_tasks_by_user(
+            user_id,
+            favorite=favorite,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         # 批量查图片 + 批量查结果（消除 N+1，从 50+ 次 SQL 降为 2 次）
         image_ids = list({t.image_id for t in tasks})

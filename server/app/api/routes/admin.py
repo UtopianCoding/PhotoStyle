@@ -11,12 +11,13 @@ from sqlalchemy import func, select
 
 from app.api.deps import AdminServiceDep, AdminUser, AuthServiceDep, DBSession, FeedbackServiceDep
 from app.models.user import User
-from app.schemas.admin import AdminUserItem, SystemConfigRead, SystemConfigUpdate
+from app.schemas.admin import AdminUserItem, BgmConfigUpdate, SystemConfigRead, SystemConfigUpdate
 from app.schemas.common import ApiResponse, PageResponse
 from app.schemas.feedback import AdminFeedbackItem, FeedbackReply, FeedbackStatusUpdate
 from app.schemas.user import AdminUserUpdate, PermissionCatalog
 from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
+from app.services.model_config_store import model_config_store
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,31 @@ async def update_config(
     logger.info("管理员请求更新系统配置")
     data = await admin_service.update_config(payload)
     return ApiResponse.success(data=data, message="模型配置已立即生效，存储/应用配置需重启后端服务")
+
+
+@router.get("/bgm", response_model=ApiResponse[dict])
+async def get_bgm_config(
+    _: AdminUser,
+) -> ApiResponse[dict]:
+    """读取背景音乐 URL（空字符串表示使用内置 mp3）"""
+    return ApiResponse.success(
+        data={"musicUrl": model_config_store.get_bgm_music_url()},
+        message="ok",
+    )
+
+
+@router.put("/bgm", response_model=ApiResponse[dict])
+async def update_bgm_config(
+    _: AdminUser,
+    payload: BgmConfigUpdate,
+) -> ApiResponse[dict]:
+    """更新背景音乐 URL（写入 DB，立即生效；留空使用内置 mp3）"""
+    await model_config_store.save_bgm_music_url(payload.music_url)
+    logger.info("管理员更新背景音乐 URL")
+    return ApiResponse.success(
+        data={"musicUrl": payload.music_url.strip()},
+        message="背景音乐已更新",
+    )
 
 
 @router.get("/users", response_model=ApiResponse[PageResponse[AdminUserItem]])

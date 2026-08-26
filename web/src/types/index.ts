@@ -243,6 +243,7 @@ export interface ConversationDetail extends ConversationItem {
  */
 export interface DashScopeConfig {
   apiKey: string
+  baseUrl: string
   modelVision: string
   modelImage: string
   workspaceId: string
@@ -371,6 +372,7 @@ export interface SystemConfigUpdate {
     enabledProviders?: string[]
     qianwen?: {
       apiKey?: string
+      baseUrl?: string
       modelVision?: string
       modelImage?: string
       workspaceId?: string

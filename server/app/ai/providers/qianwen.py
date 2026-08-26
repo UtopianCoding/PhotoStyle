@@ -122,9 +122,13 @@ class QianwenProvider(ImageProvider):
         cfg_watermark = cfg.get("watermark")
         cfg_seed = cfg.get("seed")
 
-        # 设置 base URL
-        # 如果配置了 Workspace ID，使用专属端点；否则使用共享 DashScope 端点
-        if workspace_id:
+        # 设置 base URL（优先级：配置的 base_url > Workspace 专属端点 > 共享端点）
+        from app.ai.dashscope_utils import normalize_dashscope_base_url
+
+        cfg_base_url = (cfg.get("base_url") or "").strip()
+        if cfg_base_url:
+            dashscope.base_http_api_url = normalize_dashscope_base_url(cfg_base_url)
+        elif workspace_id:
             dashscope.base_http_api_url = (
                 f"https://{workspace_id}.{region}.maas.aliyuncs.com/api/v1"
             )

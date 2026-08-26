@@ -25,6 +25,20 @@ export function updateSystemConfig(data: SystemConfigUpdate) {
 }
 
 /**
+ * 更新背景音乐 URL（立即生效；留空使用内置 mp3）
+ */
+export function updateBgmConfig(data: { musicUrl: string }) {
+  return request<{ musicUrl: string }>({ url: '/admin/bgm', method: 'put', data })
+}
+
+/**
+ * 读取当前背景音乐 URL
+ */
+export function getAdminBgmConfig() {
+  return request<{ musicUrl: string }>({ url: '/admin/bgm', method: 'get' })
+}
+
+/**
  * 分页查询用户列表
  */
 export function listUsers(params: { page?: number; pageSize?: number } = {}) {

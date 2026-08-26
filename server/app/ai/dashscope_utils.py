@@ -26,6 +26,24 @@ _DEFAULT_TIMEOUT = float(os.getenv("DASHSCOPE_CALL_TIMEOUT", "120"))
 _DEFAULT_RETRIES = int(os.getenv("DASHSCOPE_CALL_RETRIES", "2"))
 
 
+def normalize_dashscope_base_url(url: str) -> str:
+    """
+    规范化 DashScope 基础地址。
+
+    dashscope SDK（MultiModalConversation / Generation）使用 DashScope 原生 API
+    端点（路径含 /services/...），其基础地址必须是 .../api/v1；
+    而 OpenAI 兼容模式端点（.../compatible-mode/v1）仅支持 OpenAI 格式请求，
+    直接使用会导致 404。此处自动将兼容模式地址转换为原生端点。
+    """
+    if not url:
+        return url
+    cleaned = url.strip().strip("`").strip().rstrip("/")
+    if "/compatible-mode/v1" in cleaned:
+        cleaned = cleaned.replace("/compatible-mode/v1", "/api/v1")
+        logger.info("[DashScope] base_url 已从兼容模式转换为原生端点: %s", cleaned)
+    return cleaned
+
+
 async def run_blocking_with_timeout(
     func: Callable[..., T],
     *args: Any,

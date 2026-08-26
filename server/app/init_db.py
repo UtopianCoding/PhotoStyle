@@ -438,3 +438,71 @@ async def ensure_feedbacks_table() -> None:
     """确保 feedbacks 表存在（幂等）"""
     async with engine.begin() as conn:
         await conn.execute(text(_CREATE_FEEDBACKS))
+
+
+# 3D 翻页画册相关建表语句
+_CREATE_FLIPBOOK_PROJECTS = """
+CREATE TABLE IF NOT EXISTS `flipbook_projects` (
+  `id`                INT            NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `project_id`        VARCHAR(64)    NOT NULL                COMMENT '画册项目ID',
+  `user_id`           VARCHAR(64)    NOT NULL                COMMENT '用户ID',
+  `title`             VARCHAR(256)   NOT NULL DEFAULT 'Photo Book' COMMENT '画册标题',
+  `kicker`            VARCHAR(128)   NULL     DEFAULT 'Folio' COMMENT '画册眉题',
+  `status`            VARCHAR(32)    NOT NULL DEFAULT 'creating' COMMENT '画册状态',
+  `cover_url`         VARCHAR(512)   NULL                    COMMENT '封面图URL',
+  `theme_json`        TEXT           NULL                    COMMENT 'AI生成的主题配置(JSON)',
+  `page_count`        INT            NOT NULL DEFAULT 0      COMMENT '总页数',
+  `source_image_ids`  TEXT           NULL                    COMMENT '来源图片ID列表(JSON)',
+  `error_message`     TEXT           NULL                    COMMENT '错误信息',
+  `created_at`        DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at`        DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_id` (`project_id`),
+  KEY `idx_user` (`user_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_user_created` (`user_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='3D翻页画册项目表';
+"""
+
+_CREATE_FLIPBOOK_PAGES = """
+CREATE TABLE IF NOT EXISTS `flipbook_pages` (
+  `id`                INT            NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `project_id`        VARCHAR(64)    NOT NULL                COMMENT '画册项目ID',
+  `page_id`           VARCHAR(64)    NOT NULL                COMMENT '页面ID',
+  `page_order`        INT            NOT NULL                COMMENT '页面排序',
+  `image_url`         VARCHAR(512)   NULL                    COMMENT '图片URL',
+  `source_image_id`   VARCHAR(64)    NULL                    COMMENT '来源图片ID',
+  `image_width`       INT            NULL                    COMMENT '图片宽度',
+  `image_height`      INT            NULL                    COMMENT '图片高度',
+  `alt`               VARCHAR(256)   NULL                    COMMENT '图片描述',
+  `caption`           VARCHAR(256)   NULL                    COMMENT '页面标题',
+  `text`              TEXT           NULL                    COMMENT '页面文本',
+  `fit`               VARCHAR(16)    NULL                    COMMENT '图片适配方式',
+  `created_at`        DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_project` (`project_id`),
+  KEY `idx_project_order` (`project_id`, `page_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='3D翻页画册页面表';
+"""
+
+
+async def ensure_flipbook_tables() -> None:
+    """确保 flipbook 相关表存在（幂等）"""
+    async with engine.begin() as conn:
+        await conn.execute(text(_CREATE_FLIPBOOK_PROJECTS))
+        await conn.execute(text(_CREATE_FLIPBOOK_PAGES))
+
+    # 确保 theme_json 列存在（后期新增字段）
+    async with engine.begin() as conn:
+        result = await conn.execute(text(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = 'flipbook_projects' "
+            "AND COLUMN_NAME = 'theme_json'"
+        ))
+        if result.first() is None:
+            await conn.execute(text(
+                "ALTER TABLE `flipbook_projects` "
+                "ADD COLUMN `theme_json` TEXT NULL COMMENT 'AI生成的主题配置(JSON)' "
+                "AFTER `cover_url`"
+            ))

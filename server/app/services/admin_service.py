@@ -120,6 +120,7 @@ class AdminService:
                 enabled_providers=store.get_enabled_providers(),
                 qianwen=DashScopeConfigRead(
                     api_key=mask_secret(qw.get("api_key", "")),
+                    base_url=qw.get("base_url", "https://dashscope.aliyuncs.com/api/v1"),
                     model_vision=qw.get("model_vision", ""),
                     model_image=qw.get("model_image", ""),
                     workspace_id=qw.get("workspace_id", ""),
@@ -239,6 +240,8 @@ class AdminService:
             current = dict(store.get_config("qianwen") or {})
             if not _should_skip_secret(d.api_key):
                 current["api_key"] = d.api_key
+            if d.base_url is not None:
+                current["base_url"] = d.base_url
             if d.model_vision is not None:
                 current["model_vision"] = d.model_vision
             if d.model_image is not None:

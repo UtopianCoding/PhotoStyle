@@ -24,6 +24,9 @@ const formRef = ref<FormInstance>()
 // 加载/保存中
 const loading = ref(false)
 const saving = ref(false)
+// 背景音乐配置
+const bgmUrl = ref('')
+const bgmSaving = ref(false)
 // 模型 provider 当前激活的 tab（使用 provider_id：qianwen / dalle / minimax / volcengine）
 const activeProviderTab = ref<'qianwen' | 'dalle' | 'minimax' | 'volcengine'>('qianwen')
 
@@ -34,6 +37,7 @@ const form = reactive({
     enabledProviders: ['qianwen'] as string[],
     qianwen: {
       apiKey: '',
+      baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
       modelVision: '',
       modelImage: '',
       workspaceId: '',
@@ -127,10 +131,35 @@ async function loadConfig() {
     if (dp === 'dalle' || dp === 'minimax' || dp === 'qianwen' || dp === 'volcengine') {
       activeProviderTab.value = dp
     }
+    // 加载背景音乐配置
+    loadBgm()
   } catch {
     // request 拦截器已提示错误
   } finally {
     loading.value = false
+  }
+}
+
+/** 加载当前背景音乐 URL */
+async function loadBgm() {
+  try {
+    const bgm = await adminApi.getAdminBgmConfig()
+    bgmUrl.value = bgm.musicUrl || ''
+  } catch {
+    bgmUrl.value = ''
+  }
+}
+
+/** 保存背景音乐 URL（立即生效） */
+async function onSaveBgm() {
+  bgmSaving.value = true
+  try {
+    await adminApi.updateBgmConfig({ musicUrl: bgmUrl.value })
+    ElMessage.success('背景音乐已更新，刷新画册页面后生效')
+  } catch {
+    // request 拦截器已提示错误
+  } finally {
+    bgmSaving.value = false
   }
 }
 
@@ -144,6 +173,7 @@ function fillForm(data: SystemConfig) {
   const qw = data.model.qianwen
   form.model.qianwen = {
     apiKey: qw.apiKey,
+    baseUrl: qw.baseUrl || 'https://dashscope.aliyuncs.com/api/v1',
     modelVision: qw.modelVision,
     modelImage: qw.modelImage,
     workspaceId: qw.workspaceId,
@@ -215,6 +245,7 @@ function buildPayload(): SystemConfigUpdate {
   const ds = form.model.qianwen
   const qianwen: NonNullable<NonNullable<SystemConfigUpdate['model']>['qianwen']> = {}
   if (ds.apiKey && !ds.apiKey.includes('****')) qianwen.apiKey = ds.apiKey
+  if (ds.baseUrl) qianwen.baseUrl = ds.baseUrl
   if (ds.modelVision) qianwen.modelVision = ds.modelVision
   if (ds.modelImage) qianwen.modelImage = ds.modelImage
   qianwen.workspaceId = ds.workspaceId
@@ -541,8 +572,15 @@ onMounted(() => {
                     />
                     <div class="field-hint">敏感字段，保存时若仍含 **** 将跳过写入</div>
                   </el-form-item>
+                  <el-form-item label="请求地址 (Base URL)">
+                    <el-input
+                      v-model="form.model.qianwen.baseUrl"
+                      placeholder="如 https://dashscope.aliyuncs.com/api/v1"
+                    />
+                    <div class="field-hint">DashScope API 基础地址；若配置了工作空间 ID 且此处留空，则自动使用专属端点</div>
+                  </el-form-item>
                   <el-form-item label="视觉理解模型">
-                    <el-input v-model="form.model.qianwen.modelVision" placeholder="如 qwen-vl-plus" />
+                    <el-input v-model="form.model.qianwen.modelVision" placeholder="如 qwen3-vl-plus" />
                   </el-form-item>
                   <el-form-item label="图像生成模型">
                     <el-input v-model="form.model.qianwen.modelImage" placeholder="如 qwen-image-3.0-pro" />
@@ -835,6 +873,41 @@ onMounted(() => {
                 <el-input-number v-model="form.app.accessTokenExpireMinutes" :min="1" :max="10080" />
               </el-form-item>
             </div>
+          </section>
+
+          <!-- 画册背景音乐 -->
+          <section class="notebook-section">
+            <h2 class="notebook-section__label font-display">
+              <span class="ink-stamp">肆</span>
+              <span>画册背景音乐</span>
+            </h2>
+            <div class="form-grid">
+              <el-form-item label="背景音乐 URL" class="bgm-url-item">
+                <div class="bgm-field">
+                  <el-input
+                    v-model="bgmUrl"
+                    placeholder="填写 mp3 地址后保存立即生效；留空使用内置音乐"
+                    clearable
+                  >
+                    <template #prefix>
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 9l12-3" />
+                      </svg>
+                    </template>
+                  </el-input>
+                  <el-button type="primary" :loading="bgmSaving" @click="onSaveBgm">保存背景音乐</el-button>
+                </div>
+              </el-form-item>
+            </div>
+            <!-- 当前状态：远程 / 内置 -->
+            <div class="bgm-status" :class="{ 'is-remote': bgmUrl }">
+              <span class="bgm-status__dot" aria-hidden="true"></span>
+              <span>{{ bgmUrl ? '当前使用远程音乐' : '当前使用内置音乐（web/src/bj）' }}</span>
+            </div>
+            <p class="restart-tip">
+              <span class="restart-tip__icon">!</span>
+              <span>保存后立即生效：在线画册刷新页面即换音乐，导出的 HTML 也会使用该 URL</span>
+            </p>
           </section>
 
           <!-- 操作区 -->
@@ -1269,6 +1342,52 @@ onMounted(() => {
   border-radius: 8px;
   font-size: 13px;
   color: var(--color-primary-dark);
+}
+/* 背景音乐状态提示：内置（石灰点）/ 远程（朱砂点） */
+.bgm-url-item {
+  grid-column: span 2;
+}
+.bgm-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.bgm-field .el-input {
+  flex: 1;
+}
+.bgm-field .el-button {
+  flex-shrink: 0;
+  height: 32px;
+  margin-left: 0;
+}
+.bgm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+.bgm-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b5afa3;
+}
+.bgm-status.is-remote {
+  color: var(--color-primary-dark);
+  background: rgba(200, 68, 43, 0.05);
+  border-color: rgba(200, 68, 43, 0.25);
+}
+.bgm-status.is-remote .bgm-status__dot {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(200, 68, 43, 0.15);
 }
 .restart-tip__icon {
   display: inline-flex;

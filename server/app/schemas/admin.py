@@ -19,6 +19,7 @@ class DashScopeConfigRead(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     api_key: str = Field("", description="API Key（脱敏）")
+    base_url: str = Field("https://dashscope.aliyuncs.com/api/v1", description="API 基础地址")
     model_vision: str
     model_image: str
     workspace_id: str
@@ -171,6 +172,7 @@ class DashScopeConfigUpdate(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
     api_key: str | None = None
+    base_url: str | None = None
     model_vision: str | None = None
     model_image: str | None = None
     workspace_id: str | None = None
@@ -294,6 +296,17 @@ class SystemConfigUpdate(BaseModel):
     model: ModelConfigUpdate | None = None
     storage: StorageConfigUpdate | None = None
     app: AppConfigUpdate | None = None
+
+
+# ============================================================
+# 背景音乐配置
+# ============================================================
+class BgmConfigUpdate(BaseModel):
+    """背景音乐 URL 更新"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    music_url: str = Field("", description="背景音乐 URL，留空表示使用内置 mp3")
 
 
 # ============================================================

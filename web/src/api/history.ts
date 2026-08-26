@@ -7,6 +7,10 @@ export interface HistoryQuery {
   page?: number
   pageSize?: number
   favorite?: boolean
+  /** 起始日期 YYYY-MM-DD */
+  startDate?: string
+  /** 结束日期 YYYY-MM-DD */
+  endDate?: string
 }
 
 /**

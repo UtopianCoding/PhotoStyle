@@ -98,8 +98,10 @@ class DashScopeConfig(BaseSettings):
 
     # DashScope API Key（敏感信息）
     api_key: SecretStr = SecretStr("")
+    # API 基础地址（共享端点；配置了 Workspace ID 时自动切换为专属端点）
+    base_url: str = "https://dashscope.aliyuncs.com/api/v1"
     # 视觉理解模型名（用于分析图片内容）
-    model_vision: str = "qwen-vl-plus"
+    model_vision: str = "qwen3-vl-flash"
     # 图像生成模型名（用于图生图/文生图）
     model_image: str = "qwen-image-3.0-pro"
     # 百炼工作空间 ID（用于拼接 base_url，从 API Key 前缀中提取）
@@ -198,27 +200,122 @@ class VolcengineConfig(BaseSettings):
 
 
 # ============================================================
-# 模型路由配置
+# MinIO 对象存储配置
 # ============================================================
-class ModelRoutingConfig(BaseSettings):
-    """模型路由配置（决定默认使用哪个图像生成 Provider）"""
+class MinIOConfig(BaseSettings):
+    """MinIO 对象存储配置"""
 
     model_config = SettingsConfigDict(
-        env_prefix="MODEL_",
+        env_prefix="MINIO_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # 默认图像生成 Provider ID：qianwen / dalle / minimax / doubao / volcengine
-    default_provider: str = "qianwen"
+    # MinIO 端点（不含协议）
+    endpoint: str = "localhost:9000"
+    # Access Key（敏感信息）
+    access_key: SecretStr = SecretStr("")
+    # Secret Key（敏感信息）
+    secret_key: SecretStr = SecretStr("")
+    # Bucket 名称
+    bucket: str = "photostyle"
+    # 是否启用 HTTPS
+    secure: bool = False
+    # 对外访问基地址（公开域名，用于拼接可访问 URL）
+    public_base_url: str = ""
 
 
 # ============================================================
-# 存储类型配置
+# 阿里云 OSS 配置
+# ============================================================
+class OSSConfig(BaseSettings):
+    """阿里云 OSS 配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="OSS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # OSS AccessKey ID（敏感信息）
+    access_key_id: SecretStr = SecretStr("")
+    # OSS AccessKey Secret（敏感信息）
+    access_key_secret: SecretStr = SecretStr("")
+    # Bucket 名称
+    bucket: str = "photostyle"
+    # OSS 端点
+    endpoint: str = "https://oss-cn-hangzhou.aliyuncs.com"
+
+
+# ============================================================
+# JWT 配置
+# ============================================================
+class JWTConfig(BaseSettings):
+    """JWT 令牌配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="JWT_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # JWT 密钥（敏感信息）
+    secret_key: SecretStr = SecretStr("your-secret-key-change-in-production")
+    # 签名算法
+    algorithm: str = "HS256"
+    # Access Token 过期时间（分钟）
+    access_token_expire_minutes: int = 120
+    # Refresh Token 过期时间（天）
+    refresh_token_expire_days: int = 7
+
+
+# ============================================================
+# CORS 配置
+# ============================================================
+class CORSConfig(BaseSettings):
+    """跨域资源共享配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CORS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # 允许的源列表（逗号分隔字符串）
+    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        """解析为列表"""
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+
+# ============================================================
+# 日志配置
+# ============================================================
+class LoggingConfig(BaseSettings):
+    """日志配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # 日志级别
+    level: str = "INFO"
+
+
+# ============================================================
+# 存储配置
 # ============================================================
 class StorageConfig(BaseSettings):
-    """对象存储类型选择配置"""
+    """对象存储选择配置"""
 
     model_config = SettingsConfigDict(
         env_prefix="STORAGE_",
@@ -232,128 +329,10 @@ class StorageConfig(BaseSettings):
 
 
 # ============================================================
-# MinIO 对象存储配置
-# ============================================================
-class MinIOConfig(BaseSettings):
-    """MinIO 对象存储配置"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="MINIO_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # MinIO 访问端点（不含协议，如 localhost:9000）
-    endpoint: str = "localhost:9000"
-    # MinIO Access Key（敏感信息）
-    access_key: SecretStr = SecretStr("minioadmin")
-    # MinIO Secret Key（敏感信息）
-    secret_key: SecretStr = SecretStr("minioadmin")
-    # 存储桶名称
-    bucket: str = "photostyle"
-    # 是否使用 HTTPS
-    secure: bool = False
-    # 对外访问基地址（用于生成公开 URL，如 http://localhost:9000）
-    public_base_url: str = "http://localhost:9000"
-
-    @property
-    def endpoint_with_protocol(self) -> str:
-        """返回带协议的端点地址"""
-        protocol = "https" if self.secure else "http"
-        return f"{protocol}://{self.endpoint}"
-
-
-# ============================================================
-# 阿里云 OSS 配置
-# ============================================================
-class OSSConfig(BaseSettings):
-    """阿里云对象存储 OSS 配置"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="OSS_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # OSS Access Key ID（敏感信息）
-    access_key_id: SecretStr = SecretStr("")
-    # OSS Access Key Secret（敏感信息）
-    access_key_secret: SecretStr = SecretStr("")
-    # OSS 存储桶名称
-    bucket: str = "photostyle"
-    # OSS 访问端点
-    endpoint: str = "https://oss-cn-hangzhou.aliyuncs.com"
-
-
-# ============================================================
-# JWT 配置
-# ============================================================
-class JWTConfig(BaseSettings):
-    """JWT 认证配置"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="JWT_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # JWT 签名密钥（敏感信息，生产环境务必修改）
-    secret_key: SecretStr = SecretStr("")
-    # 签名算法
-    algorithm: str = "HS256"
-    # Access Token 过期时间（分钟）
-    access_token_expire_minutes: int = 120
-    # Refresh Token 过期时间（天）
-    refresh_token_expire_days: int = 7
-
-
-# ============================================================
-# CORS 配置
-# ============================================================
-class CORSConfig(BaseSettings):
-    """跨域资源共享（CORS）配置"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="CORS_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # 允许的跨域来源列表（逗号分隔字符串，避免 pydantic-settings JSON 解析问题）
-    allowed_origins: str = "http://localhost:5173,http://localhost:3000"
-
-    @property
-    def allowed_origins_list(self) -> list[str]:
-        """解析逗号分隔的字符串为列表"""
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
-
-
-# ============================================================
-# 日志配置
-# ============================================================
-class LoggingConfig(BaseSettings):
-    """日志配置"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="LOG_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL
-    level: str = "INFO"
-
-
-# ============================================================
 # SMTP 邮件配置
 # ============================================================
-class SmtpConfig(BaseSettings):
-    """SMTP 邮件发送配置（用于注册验证码等）"""
+class SMTPConfig(BaseSettings):
+    """SMTP 邮件配置"""
 
     model_config = SettingsConfigDict(
         env_prefix="SMTP_",
@@ -364,33 +343,16 @@ class SmtpConfig(BaseSettings):
 
     # SMTP 服务器地址
     host: str = "smtp.gmail.com"
-    # SMTP 端口（465=SSL, 587=TLS）
-    port: int = 587
-    # 发件人邮箱
+    # SMTP 端口
+    port: int = 465
+    # 用户名
     username: str = ""
-    # 发件人密码 / 授权码（敏感信息）
+    # 密码（敏感信息）
     password: SecretStr = SecretStr("")
-    # 发件人显示名称
+    # 发件人名称
     from_name: str = "PhotoStyle"
-    # 是否启用 TLS
+    # 是否使用 TLS
     use_tls: bool = True
-
-
-# ============================================================
-# 限流配置
-# ============================================================
-class RateLimitConfig(BaseSettings):
-    """速率限制配置"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="RATE_LIMIT_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # 每次转换扣除的积分数
-    credit_cost_per_convert: int = 4
 
 
 # ============================================================
@@ -406,76 +368,171 @@ class AlipayConfig(BaseSettings):
         extra="ignore",
     )
 
-    # 是否启用支付宝支付
+    # 是否启用支付宝
     enabled: bool = False
-    # 支付宝应用 AppID
+    # 应用 AppID
     app_id: str = ""
-    # 商户私钥（RSA2 私钥，PKCS8 格式）
-    private_key: str = ""
-    # 支付宝公钥（用于验证回调签名）
+    # 商户 RSA2 私钥（敏感信息）
+    private_key: SecretStr = SecretStr("")
+    # 支付宝公钥
     alipay_public_key: str = ""
-    # 签名算法：RSA2
+    # 签名算法
     sign_type: str = "RSA2"
     # 编码格式
     charset: str = "utf-8"
     # 支付宝网关
-    gateway: str = "https://openapi.alipaydev.com/gateway.do"  # 沙箱网关
+    gateway: str = "https://openapi.alipaydev.com/gateway.do"
 
 
 # ============================================================
-# 全局 Settings 聚合类
+# 限流 / 积分配置
 # ============================================================
-class Settings(BaseSettings):
-    """
-    全局配置聚合类
-
-    组合所有子配置组，提供统一的配置访问入口。
-    各子配置组独立从 .env 文件加载对应前缀的环境变量。
-    """
+class RateLimitConfig(BaseSettings):
+    """限流与积分相关配置"""
 
     model_config = SettingsConfigDict(
+        env_prefix="RATE_LIMIT_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    # 应用配置
-    app: AppConfig = AppConfig()
-    # 数据库配置
-    database: DatabaseConfig = DatabaseConfig()
-    # Redis 配置
-    redis: RedisConfig = RedisConfig()
-    # DashScope（千问）配置
-    dashscope: DashScopeConfig = DashScopeConfig()
-    # 豆包配置
-    doubao: DoubaoConfig = DoubaoConfig()
-    # GPT Image 2 配置
-    dalle: DalleConfig = DalleConfig()
-    # MiniMax 配置
-    minimax: MinimaxConfig = MinimaxConfig()
-    # 火山引擎（Seedream）配置
-    volcengine: VolcengineConfig = VolcengineConfig()
-    # 模型路由配置
-    model: ModelRoutingConfig = ModelRoutingConfig()
-    # 存储类型配置
-    storage: StorageConfig = StorageConfig()
-    # MinIO 配置
-    minio: MinIOConfig = MinIOConfig()
-    # OSS 配置
-    oss: OSSConfig = OSSConfig()
-    # JWT 配置
-    jwt: JWTConfig = JWTConfig()
-    # CORS 配置
-    cors: CORSConfig = CORSConfig()
-    # 日志配置
-    logging: LoggingConfig = LoggingConfig()
-    # SMTP 邮件配置
-    smtp: SmtpConfig = SmtpConfig()
-    # 限流配置
-    rate_limit: RateLimitConfig = RateLimitConfig()
-    # 支付宝配置
-    alipay: AlipayConfig = AlipayConfig()
+    # 每次风格转换扣除的积分数
+    credit_cost_per_convert: int = 4
 
 
-# 全局配置单例，供应用各模块直接导入使用
+# ============================================================
+# 主配置聚合
+# ============================================================
+class Settings:
+    """
+    全局配置聚合类
+
+    将各子配置组合为单一配置对象，通过属性访问。
+    使用懒加载模式，首次访问时才实例化各子配置。
+    """
+
+    def __init__(self) -> None:
+        self._app: AppConfig | None = None
+        self._database: DatabaseConfig | None = None
+        self._redis: RedisConfig | None = None
+        self._dashscope: DashScopeConfig | None = None
+        self._doubao: DoubaoConfig | None = None
+        self._dalle: DalleConfig | None = None
+        self._minimax: MinimaxConfig | None = None
+        self._volcengine: VolcengineConfig | None = None
+        self._minio: MinIOConfig | None = None
+        self._oss: OSSConfig | None = None
+        self._jwt: JWTConfig | None = None
+        self._cors: CORSConfig | None = None
+        self._logging: LoggingConfig | None = None
+        self._storage: StorageConfig | None = None
+        self._smtp: SMTPConfig | None = None
+        self._alipay: AlipayConfig | None = None
+        self._rate_limit: RateLimitConfig | None = None
+
+    @property
+    def app(self) -> AppConfig:
+        if self._app is None:
+            self._app = AppConfig()
+        return self._app
+
+    @property
+    def database(self) -> DatabaseConfig:
+        if self._database is None:
+            self._database = DatabaseConfig()
+        return self._database
+
+    @property
+    def redis(self) -> RedisConfig:
+        if self._redis is None:
+            self._redis = RedisConfig()
+        return self._redis
+
+    @property
+    def dashscope(self) -> DashScopeConfig:
+        if self._dashscope is None:
+            self._dashscope = DashScopeConfig()
+        return self._dashscope
+
+    @property
+    def doubao(self) -> DoubaoConfig:
+        if self._doubao is None:
+            self._doubao = DoubaoConfig()
+        return self._doubao
+
+    @property
+    def dalle(self) -> DalleConfig:
+        if self._dalle is None:
+            self._dalle = DalleConfig()
+        return self._dalle
+
+    @property
+    def minimax(self) -> MinimaxConfig:
+        if self._minimax is None:
+            self._minimax = MinimaxConfig()
+        return self._minimax
+
+    @property
+    def volcengine(self) -> VolcengineConfig:
+        if self._volcengine is None:
+            self._volcengine = VolcengineConfig()
+        return self._volcengine
+
+    @property
+    def minio(self) -> MinIOConfig:
+        if self._minio is None:
+            self._minio = MinIOConfig()
+        return self._minio
+
+    @property
+    def oss(self) -> OSSConfig:
+        if self._oss is None:
+            self._oss = OSSConfig()
+        return self._oss
+
+    @property
+    def jwt(self) -> JWTConfig:
+        if self._jwt is None:
+            self._jwt = JWTConfig()
+        return self._jwt
+
+    @property
+    def cors(self) -> CORSConfig:
+        if self._cors is None:
+            self._cors = CORSConfig()
+        return self._cors
+
+    @property
+    def logging(self) -> LoggingConfig:
+        if self._logging is None:
+            self._logging = LoggingConfig()
+        return self._logging
+
+    @property
+    def storage(self) -> StorageConfig:
+        if self._storage is None:
+            self._storage = StorageConfig()
+        return self._storage
+
+    @property
+    def smtp(self) -> SMTPConfig:
+        if self._smtp is None:
+            self._smtp = SMTPConfig()
+        return self._smtp
+
+    @property
+    def alipay(self) -> AlipayConfig:
+        if self._alipay is None:
+            self._alipay = AlipayConfig()
+        return self._alipay
+
+    @property
+    def rate_limit(self) -> RateLimitConfig:
+        if self._rate_limit is None:
+            self._rate_limit = RateLimitConfig()
+        return self._rate_limit
+
+
+# 全局单例
 settings = Settings()

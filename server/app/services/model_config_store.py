@@ -60,6 +60,28 @@ class ModelConfigStore:
             return config.get("access_key", "")
         return config.get("api_key", "")
 
+    # -------------------- 背景音乐配置 --------------------
+
+    def get_bgm_music_url(self) -> str:
+        """获取背景音乐 URL（空字符串表示使用内置 mp3）"""
+        config = self._configs.get("_bgm") or {}
+        return config.get("music_url", "").strip()
+
+    async def save_bgm_music_url(self, music_url: str) -> None:
+        """保存背景音乐 URL 到 DB 并更新内存"""
+        from app.repositories.provider_config_repo import ProviderConfigRepository
+
+        async with async_session_maker() as session:
+            repo = ProviderConfigRepository(session)
+            await repo.upsert(
+                "_bgm",
+                json.dumps({"music_url": music_url.strip()}, ensure_ascii=False),
+            )
+            await session.commit()
+
+        self._configs["_bgm"] = {"music_url": music_url.strip()}
+        logger.info("背景音乐 URL 已保存: %s", music_url.strip() or "(使用内置 mp3)")
+
     # -------------------- 写入 --------------------
 
     def set_config(self, provider_id: str, config: dict[str, Any]) -> None:
@@ -196,6 +218,7 @@ class ModelConfigStore:
         seeds: dict[str, dict[str, Any]] = {
             "qianwen": {
                 "api_key": settings.dashscope.api_key.get_secret_value(),
+                "base_url": settings.dashscope.base_url,
                 "model_vision": settings.dashscope.model_vision,
                 "model_image": settings.dashscope.model_image,
                 "workspace_id": settings.dashscope.workspace_id,

@@ -48,10 +48,17 @@ async def list_history(
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页条数"),
     favorite: bool = Query(default=False, description="仅查看含收藏结果的记录"),
+    start_date: str | None = Query(default=None, alias="startDate", description="起始日期 YYYY-MM-DD"),
+    end_date: str | None = Query(default=None, alias="endDate", description="结束日期 YYYY-MM-DD"),
 ) -> ApiResponse[HistoryListResponse]:
-    """分页获取用户历史任务列表；favorite=true 时仅返回含收藏结果的记录"""
+    """分页获取用户历史任务列表；favorite=true 时仅返回含收藏结果的记录；可按日期范围筛选"""
     result = await service.list_history(
-        user.user_id, page=page, page_size=page_size, favorite=favorite
+        user.user_id,
+        page=page,
+        page_size=page_size,
+        favorite=favorite,
+        start_date=start_date,
+        end_date=end_date,
     )
     return ApiResponse.success(data=result)
 

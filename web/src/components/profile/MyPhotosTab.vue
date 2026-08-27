@@ -90,6 +90,7 @@ onMounted(() => {
               :alt="`图片 ${image.imageId}`"
               class="preview-img"
               loading="lazy"
+              decoding="async"
             />
           </div>
 

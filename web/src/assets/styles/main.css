@@ -33,6 +33,12 @@ body {
   background-attachment: fixed;
 }
 
+/* ====== 图片加载优化 ====== */
+/* 加载占位：图片未就绪时显示温暖淡石灰块，避免白屏闪烁 */
+img {
+  background: rgba(156, 150, 139, 0.1);
+}
+
 /* 自定义滚动条（温暖石灰调） */
 ::-webkit-scrollbar {
   width: 8px;

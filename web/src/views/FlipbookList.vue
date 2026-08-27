@@ -39,6 +39,8 @@
                 :src="book.coverUrl"
                 :alt="book.title"
                 class="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
               />
               <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#efe9dd] to-[#e2d9c9]">
                 <svg class="w-12 h-12 text-[#c9bda4]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

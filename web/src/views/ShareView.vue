@@ -162,6 +162,7 @@ function onPreviewResult() {
               preview-teleported
               hide-on-click-modal
               @click="onPreviewResult"
+              lazy
             />
             <div v-else class="share-compare__placeholder">暂无效果图</div>
           </div>
@@ -183,6 +184,7 @@ function onPreviewResult() {
             fit="cover"
             class="share-results__img"
             preview-teleported
+            lazy
           />
         </div>
       </div>

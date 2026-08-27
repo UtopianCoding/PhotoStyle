@@ -226,6 +226,7 @@ onMounted(() => {
             :initial-index="index"
             fit="cover"
             class="feedback-image"
+            lazy
           />
         </div>
 
@@ -314,6 +315,7 @@ onMounted(() => {
               :initial-index="index"
               fit="cover"
               class="feedback-image"
+              lazy
             />
           </div>
         </div>

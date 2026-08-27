@@ -551,6 +551,7 @@ function goBack() {
               preview-teleported
               :preview-src-list="partialPreviewList"
               :initial-index="0"
+              lazy
             />
           </div>
         </div>
@@ -666,6 +667,7 @@ function goBack() {
                 class="comparison-frame__img"
                 preview-teleported
                 hide-on-click-modal
+                lazy
               >
                 <template #placeholder>
                   <div class="comparison-frame__placeholder">加载中…</div>
@@ -735,6 +737,7 @@ function goBack() {
                 class="multi-results__card-img"
                 preview-teleported
                 hide-on-click-modal
+                lazy
               />
               <div class="multi-results__card-zoom">
                 <el-icon><ZoomIn /></el-icon>
@@ -936,7 +939,7 @@ function goBack() {
               :class="{ 'poster-picker__item--active': posterSelectedId === r.resultId }"
               @click="posterSelectedId = r.resultId; onPosterImageChange()"
             >
-              <img :src="r.resultUrl" :alt="providerLabel(r.provider)" />
+              <img :src="r.resultUrl" :alt="providerLabel(r.provider)" loading="lazy" decoding="async" />
               <span class="poster-picker__item-label">{{ providerLabel(r.provider) }}</span>
               <span v-if="posterSelectedId === r.resultId" class="poster-picker__check">✓</span>
             </div>
@@ -952,6 +955,8 @@ function goBack() {
             :src="posterDataUrl"
             class="poster-dialog__img"
             alt="分享海报"
+            loading="lazy"
+            decoding="async"
           />
         </div>
       </div>

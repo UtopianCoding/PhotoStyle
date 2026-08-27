@@ -284,6 +284,7 @@ onMounted(() => {
               :initial-index="index"
               fit="cover"
               class="feedback-image"
+              lazy
             />
           </div>
 

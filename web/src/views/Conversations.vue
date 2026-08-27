@@ -202,7 +202,7 @@ watch([skillId, status], onFilterChange)
       >
         <!-- 输入原图 -->
         <div class="conv-card__input">
-          <img :src="item.inputImageUrl" :alt="skillName(item.skillId)" />
+          <img :src="item.inputImageUrl" :alt="skillName(item.skillId)" loading="lazy" decoding="async" />
         </div>
         <!-- 原图 → 成果 的转化意象 -->
         <span class="conv-card__arrow" aria-hidden="true">→</span>
@@ -307,6 +307,7 @@ watch([skillId, status], onFilterChange)
                   class="conv-detail__img"
                   :preview-src-list="detail.outputImageUrls"
                   :initial-index="i"
+                  lazy
                 />
                 <span class="conv-detail__provider-tag">{{ providerLabel(detail.provider) }}</span>
               </div>

@@ -37,6 +37,49 @@ PREVIEW_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 
 
 @dataclass
+class InputVariable:
+    """技能输入变量（用户需手动填写，替换提示词模板中的 {{KEY}} 占位符）"""
+
+    # 变量 key（提示词模板中写 {{key}}，大小写不敏感）
+    key: str
+    # 输入框标签（如「拍摄地点」）
+    label: str = ""
+    # 输入框占位提示
+    placeholder: str = ""
+    # 辅助提示文字
+    hint: str = ""
+    # 是否必填
+    required: bool = False
+    # 默认值（用户留空时使用）
+    default: str = ""
+    # 是否需要文本模型翻译（如地点翻译为英文）
+    translate: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "placeholder": self.placeholder,
+            "hint": self.hint,
+            "required": self.required,
+            "default": self.default,
+            "translate": self.translate,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "InputVariable":
+        return cls(
+            key=str(data.get("key", "")).strip(),
+            label=str(data.get("label", "")).strip(),
+            placeholder=str(data.get("placeholder", "")).strip(),
+            hint=str(data.get("hint", "")).strip(),
+            required=bool(data.get("required", False)),
+            default=str(data.get("default", "")).strip(),
+            translate=bool(data.get("translate", False)),
+        )
+
+
+@dataclass
 class SkillConfig:
     """技能配置"""
 
@@ -72,6 +115,8 @@ class SkillConfig:
     sort_order: int = 100
     # 来源：file（文件系统）或 db（数据库）
     source: str = "file"
+    # 输入变量（用户手动填写，替换提示词模板占位符）
+    input_variables: list[InputVariable] = field(default_factory=list)
     # 其他原始选项
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -123,7 +168,17 @@ class SkillEngine:
                             preview_urls_list = json.loads(db_skill.preview_urls)
                         except json.JSONDecodeError:
                             logger.warning(f"[SkillEngine] 技能 {db_skill.skill_id} 的 preview_urls JSON 解析失败")
-                    
+
+                    # 解析 input_variables JSON 字段（DB 技能）
+                    input_variables: list[InputVariable] = []
+                    iv_raw = getattr(db_skill, "input_variables", None)
+                    if iv_raw:
+                        try:
+                            iv_list = json.loads(iv_raw)
+                            input_variables = [InputVariable.from_dict(d) for d in iv_list]
+                        except (json.JSONDecodeError, TypeError):
+                            logger.warning(f"[SkillEngine] 技能 {db_skill.skill_id} 的 input_variables JSON 解析失败")
+
                     config = SkillConfig(
                         skill_id=db_skill.skill_id,
                         name=db_skill.name,
@@ -138,6 +193,7 @@ class SkillEngine:
                         is_active=db_skill.is_active,
                         need_analysis=db_skill.need_analysis,
                         sort_order=db_skill.sort_order,
+                        input_variables=input_variables,
                         source="db",
                     )
                     self._db_skills_cache[db_skill.skill_id] = config
@@ -154,6 +210,9 @@ class SkillEngine:
         解析 SKILL.md 内容为 SkillConfig。
 
         支持简单的 YAML 风格 frontmatter（--- 包裹），其余内容视为提示词模板。
+        frontmatter 支持两种 input_variables 写法：
+          - 单行 JSON：input_variables: [{"key":"location","label":"拍摄地点",...}]
+          - 多行 YAML：input_variables: 换行后每行 "- key: xxx" 带缩进子字段
         """
         config = SkillConfig(skill_id=skill_id)
         body = content
@@ -163,8 +222,12 @@ class SkillEngine:
         if fm_match:
             frontmatter = fm_match.group(1)
             body = fm_match.group(2).strip()
-            for line in frontmatter.splitlines():
+            lines = frontmatter.splitlines()
+            i = 0
+            while i < len(lines):
+                line = lines[i]
                 if ":" not in line:
+                    i += 1
                     continue
                 key, _, value = line.partition(":")
                 key = key.strip()
@@ -183,14 +246,83 @@ class SkillEngine:
                     config.category = value
                 elif key == "reference_image_url":
                     config.reference_image_url = value
+                elif key == "input_variables":
+                    # 单行 JSON 数组
+                    if value.startswith("["):
+                        config.input_variables = self._parse_input_variables_json(value)
+                    else:
+                        # 多行 YAML 列表：收集后续 "- " 缩进条目
+                        items: list[dict[str, Any]] = []
+                        i += 1
+                        while i < len(lines):
+                            entry = lines[i].strip()
+                            if not entry:
+                                i += 1
+                                continue
+                            if not entry.startswith("- "):
+                                break
+                            item = self._parse_yaml_entry(entry[2:], lines, i)
+                            items.append(item)
+                            i = item.pop("__line_index__", i)
+                            i += 1
+                        config.input_variables = [InputVariable.from_dict(d) for d in items]
+                        continue
                 else:
                     config.options[key] = value
+                i += 1
 
         config.prompt_template = body
         # 名称缺省时使用技能ID
         if not config.name:
             config.name = skill_id or "未命名技能"
         return config
+
+    @staticmethod
+    def _parse_input_variables_json(value: str) -> list[InputVariable]:
+        """解析单行 JSON 形式的 input_variables"""
+        import json
+
+        try:
+            data = json.loads(value)
+            return [InputVariable.from_dict(d) for d in data]
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning("[SkillEngine] input_variables JSON 解析失败: %s", exc)
+            return []
+
+    @staticmethod
+    def _parse_yaml_entry(first_value: str, lines: list[str], index: int) -> dict[str, Any]:
+        """
+        解析多行 YAML 列表中的单个条目。
+
+        条目格式（每个子字段比 "- " 多缩进 2 格，即 4 空格或 tab）：
+          - key: location
+            label: 拍摄地点
+            required: true
+
+        Returns:
+            条目字典；若后续行仍属于该条目，通过 "__line_index__" 返回最后消费的行号。
+        """
+        item: dict[str, Any] = {}
+        # 首行 "key: value"
+        if ":" in first_value:
+            k, _, v = first_value.partition(":")
+            item[k.strip()] = v.strip().strip('"').strip("'")
+        j = index + 1
+        while j < len(lines):
+            raw = lines[j]
+            if not raw.strip():
+                j += 1
+                continue
+            # 条目缩进：以 2 空格或 tab 开头（子字段），且不是新条目 "- "
+            stripped = raw.strip()
+            if stripped.startswith("- ") or not (raw.startswith("  ") or raw.startswith("\t")):
+                break
+            if ":" in stripped:
+                k, _, v = stripped.partition(":")
+                item[k.strip()] = v.strip().strip('"').strip("'")
+            j += 1
+        item["__line_index__"] = j - 1
+        return item
 
     def load_skill(self, skill_id: str) -> SkillConfig:
         """

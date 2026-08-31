@@ -129,6 +129,7 @@ class AdminService:
                     width=qw.get("width"),
                     height=qw.get("height"),
                     seed=qw.get("seed"),
+                    resolution=qw.get("resolution"),
                     timeout=qw.get("timeout"),
                     # prompt_extend 默认 true：未显式配置时返回开启状态
                     prompt_extend=qw.get("prompt_extend", True),
@@ -153,6 +154,7 @@ class AdminService:
                     width=mm.get("width"),
                     height=mm.get("height"),
                     seed=mm.get("seed"),
+                    resolution=mm.get("resolution"),
                 ),
                 volcengine=VolcengineConfigRead(
                     api_key=mask_secret(vc.get("api_key", "")),
@@ -162,6 +164,7 @@ class AdminService:
                     width=vc.get("width"),
                     height=vc.get("height"),
                     seed=vc.get("seed"),
+                    resolution=vc.get("resolution"),
                 ),
             ),
             # 存储 / 应用配置仍从 settings（.env）读取
@@ -259,6 +262,8 @@ class AdminService:
                 current["height"] = d.height
             if d.seed is not None:
                 current["seed"] = d.seed
+            if d.resolution is not None:
+                current["resolution"] = d.resolution.strip()
             # timeout：传 0 或 None 则删除字段（恢复默认 300），否则写入
             if d.timeout:  # > 0 才写入
                 if d.timeout < 30:
@@ -316,6 +321,8 @@ class AdminService:
                 current["height"] = m.height
             if m.seed is not None:
                 current["seed"] = m.seed
+            if m.resolution is not None:
+                current["resolution"] = m.resolution.strip()
             await store.save_provider_config("minimax", _sanitize_config(current))
 
         # 火山引擎（Seedream）
@@ -336,6 +343,8 @@ class AdminService:
                 current["height"] = v.height
             if v.seed is not None:
                 current["seed"] = v.seed
+            if v.resolution is not None:
+                current["resolution"] = v.resolution.strip()
             await store.save_provider_config("volcengine", _sanitize_config(current))
 
     # -------------------- 存储/应用配置写入 .env --------------------

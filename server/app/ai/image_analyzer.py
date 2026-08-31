@@ -29,6 +29,19 @@ from app.core.exceptions import AIServiceException
 logger = logging.getLogger(__name__)
 
 
+def _log_call_details(label: str, model: str, image_url: str, api_key: str) -> None:
+    """打印模型调用的详细入参（URL / 模型 / Key 脱敏 / 图片地址），DEBUG 级"""
+    try:
+        from dashscope import base_http_api_url
+    except ImportError:  # pragma: no cover
+        base_http_api_url = "(未加载 dashscope)"
+    masked = f"{api_key[:8]}****{api_key[-4:]}" if api_key else "(未配置)"
+    logger.debug(
+        "[%s] 请求详情: url=%s, model=%s, api_key=%s, image_url=%s",
+        label, base_http_api_url, model, masked, image_url,
+    )
+
+
 class ImageAnalyzer:
     """图片内容分析器"""
 
@@ -42,6 +55,28 @@ class ImageAnalyzer:
 
     def __init__(self, model: str | None = None) -> None:
         self.model = model or self.DEFAULT_MODEL
+
+    def _sync_dashscope(self) -> str:
+        """
+        从后台配置（千问 Provider）同步 Key / URL / 视觉模型并设置 SDK 全局地址。
+
+        与图像生成（qianwen.py）使用同一套后台配置，避免分析仍用 .env 旧 Key 导致 401。
+        返回 API Key；后台未配置时回退 .env。
+        """
+        from app.services.model_config_store import model_config_store
+        import dashscope
+        from app.ai.dashscope_utils import normalize_dashscope_base_url
+
+        cfg = model_config_store.get_config("qianwen") or {}
+        api_key = cfg.get("api_key") or settings.dashscope.api_key.get_secret_value()
+        base_url = (cfg.get("base_url") or "").strip()
+        dashscope.base_http_api_url = (
+            normalize_dashscope_base_url(base_url)
+            if base_url
+            else "https://dashscope.aliyuncs.com/api/v1"
+        )
+        self.model = (cfg.get("model_vision") or "").strip() or self.model
+        return api_key
 
     def _get_cached(self, method: str, image_url: str) -> Any | None:
         """获取缓存的分析结果，过期返回 None"""
@@ -84,7 +119,7 @@ class ImageAnalyzer:
         from dashscope import MultiModalConversation
         from http import HTTPStatus
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        api_key = self._sync_dashscope()
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
 
@@ -104,6 +139,7 @@ class ImageAnalyzer:
         ]
 
         logger.info("[图片分析] 调用 qwen-vl-plus: image_url=%s", image_url)
+        _log_call_details("图片分析", self.model, image_url, api_key)
         logger.debug("[图片分析] 完整 messages: %s", json.dumps(messages, ensure_ascii=False, default=str))
 
         start_time = time.time()
@@ -197,7 +233,7 @@ class ImageAnalyzer:
         from dashscope import MultiModalConversation
         from http import HTTPStatus
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        api_key = self._sync_dashscope()
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
 
@@ -290,7 +326,7 @@ class ImageAnalyzer:
         from dashscope import MultiModalConversation
         from http import HTTPStatus
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        api_key = self._sync_dashscope()
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
 
@@ -382,7 +418,7 @@ class ImageAnalyzer:
         from dashscope import MultiModalConversation
         from http import HTTPStatus
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        api_key = self._sync_dashscope()
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
 
@@ -468,7 +504,7 @@ class ImageAnalyzer:
         from dashscope import MultiModalConversation
         from http import HTTPStatus
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        api_key = self._sync_dashscope()
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
 
@@ -489,6 +525,7 @@ class ImageAnalyzer:
         ]
 
         logger.info("[图片分类] 调用 VL 模型: image_url=%s", image_url)
+        _log_call_details("图片分类", self.model, image_url, api_key)
         start_time = time.time()
 
         try:

@@ -53,11 +53,24 @@ def _translate_sync(text: str) -> str:
     """同步翻译（在线程池中执行）"""
     from http import HTTPStatus
 
+    import dashscope
     from dashscope import Generation
 
-    api_key = settings.dashscope.api_key.get_secret_value()
+    # 与图片分析/生成一致：优先使用后台配置（DB 持久化）的 Key 与 URL，
+    # 避免 .env 中旧 Key 已失效/被封禁导致翻译失败。
+    from app.ai.dashscope_utils import normalize_dashscope_base_url
+    from app.services.model_config_store import model_config_store
+
+    cfg = model_config_store.get_config("qianwen") or {}
+    api_key = cfg.get("api_key") or settings.dashscope.api_key.get_secret_value()
     if not api_key:
         raise AIServiceException("DashScope API Key 未配置")
+    base_url = (cfg.get("base_url") or "").strip()
+    dashscope.base_http_api_url = (
+        normalize_dashscope_base_url(base_url)
+        if base_url
+        else "https://dashscope.aliyuncs.com/api/v1"
+    )
 
     messages = [
         {"role": "system", "content": TRANSLATE_SYSTEM_PROMPT},

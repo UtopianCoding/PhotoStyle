@@ -68,6 +68,10 @@ class SkillConfig(Base):
     need_analysis: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, comment="是否需要图片分析"
     )
+    # 输入变量（JSON 数组：技能声明需要用户填写的变量，如地点/签名）
+    input_variables: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="输入变量(JSON数组)"
+    )
     # 排序权重（数字越小越靠前）
     sort_order: Mapped[int] = mapped_column(
         Integer, default=100, nullable=False, comment="排序权重"

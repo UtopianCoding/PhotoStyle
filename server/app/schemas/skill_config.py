@@ -42,6 +42,8 @@ class SkillConfigCreate(BaseModel):
     is_active: bool = Field(default=True, description="是否启用")
     # 是否需要图片分析
     need_analysis: bool = Field(default=True, description="是否需要图片分析")
+    # 输入变量（技能声明需要用户填写的变量，如地点/签名；替换提示词模板 {{KEY}} 占位符）
+    input_variables: list[dict] | None = Field(default=None, description="输入变量列表")
     # 排序权重
     sort_order: int = Field(default=100, description="排序权重")
 
@@ -77,6 +79,8 @@ class SkillConfigUpdate(BaseModel):
     is_active: bool | None = Field(default=None, description="是否启用")
     # 是否需要图片分析
     need_analysis: bool | None = Field(default=None, description="是否需要图片分析")
+    # 输入变量（技能声明需要用户填写的变量，如地点/签名；替换提示词模板 {{KEY}} 占位符）
+    input_variables: list[dict] | None = Field(default=None, description="输入变量列表")
     # 排序权重
     sort_order: int | None = Field(default=None, description="排序权重")
 
@@ -115,6 +119,8 @@ class SkillConfigResponse(BaseModel):
     is_active: bool = True
     # 是否需要图片分析
     need_analysis: bool = True
+    # 输入变量（技能声明需要用户填写的变量，如地点/签名；替换提示词模板 {{KEY}} 占位符）
+    input_variables: list[dict] = Field(default_factory=list, description="输入变量列表")
     # 排序权重
     sort_order: int = 100
     # 创建时间

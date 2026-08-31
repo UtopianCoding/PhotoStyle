@@ -36,7 +36,15 @@ def _to_response(skill: SkillConfig) -> SkillConfigResponse:
             preview_urls = json.loads(skill.preview_urls)
         except (json.JSONDecodeError, TypeError):
             preview_urls = []
-    
+
+    # 解析 input_variables JSON 字符串为列表
+    input_variables = []
+    if skill.input_variables:
+        try:
+            input_variables = json.loads(skill.input_variables)
+        except (json.JSONDecodeError, TypeError):
+            input_variables = []
+
     return SkillConfigResponse(
         id=skill.id,
         skill_id=skill.skill_id,
@@ -51,6 +59,7 @@ def _to_response(skill: SkillConfig) -> SkillConfigResponse:
         preview_urls=preview_urls,
         is_active=skill.is_active,
         need_analysis=skill.need_analysis,
+        input_variables=input_variables,
         sort_order=skill.sort_order,
         created_at=skill.created_at,
         updated_at=skill.updated_at,
@@ -105,11 +114,15 @@ async def create_skill_config(
         raise ValidationException(f"技能ID [{payload.skill_id}] 已存在")
 
     # 创建新技能
-    # 将 preview_urls 列表转换为 JSON 字符串
+    # 将 preview_urls / input_variables 列表转换为 JSON 字符串
     preview_urls_json = None
     if payload.preview_urls:
-        preview_urls_json = json.dumps(payload.preview_urls)
-    
+        preview_urls_json = json.dumps(payload.preview_urls, ensure_ascii=False)
+
+    input_variables_json = None
+    if payload.input_variables:
+        input_variables_json = json.dumps(payload.input_variables, ensure_ascii=False)
+
     skill = SkillConfig(
         skill_id=payload.skill_id,
         name=payload.name,
@@ -123,6 +136,7 @@ async def create_skill_config(
         preview_urls=preview_urls_json,
         is_active=payload.is_active,
         need_analysis=payload.need_analysis,
+        input_variables=input_variables_json,
         sort_order=payload.sort_order,
     )
     db.add(skill)
@@ -150,14 +164,22 @@ async def update_skill_config(
 
     # 更新字段
     update_data = payload.model_dump(exclude_unset=True)
-    
+
     # 特殊处理 preview_urls：将列表转换为 JSON 字符串
     if 'preview_urls' in update_data:
         preview_urls_value = update_data['preview_urls']
         if preview_urls_value:
-            update_data['preview_urls'] = json.dumps(preview_urls_value)
+            update_data['preview_urls'] = json.dumps(preview_urls_value, ensure_ascii=False)
         else:
             update_data['preview_urls'] = None
+
+    # 特殊处理 input_variables：将列表转换为 JSON 字符串
+    if 'input_variables' in update_data:
+        iv_value = update_data['input_variables']
+        if iv_value:
+            update_data['input_variables'] = json.dumps(iv_value, ensure_ascii=False)
+        else:
+            update_data['input_variables'] = None
     
     for field, value in update_data.items():
         setattr(skill, field, value)

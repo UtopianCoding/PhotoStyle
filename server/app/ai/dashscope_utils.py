@@ -18,6 +18,8 @@ import logging
 import os
 from typing import Any, Callable, TypeVar
 
+from app.core.exceptions import AIServiceException
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -44,6 +46,22 @@ def normalize_dashscope_base_url(url: str) -> str:
     return cleaned
 
 
+def parse_resolution(resolution: str | None) -> tuple[int, int] | None:
+    """
+    解析分辨率字符串（如 "1024*1024" / "1024x1024" / "768×1024"）为 (宽, 高)。
+
+    无法解析时返回 None（调用方回退到 width/height 或默认尺寸）。
+    """
+    import re
+
+    if not resolution:
+        return None
+    m = re.fullmatch(r"\s*(\d+)\s*[xX*×]\s*(\d+)\s*", str(resolution).strip())
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
 async def run_blocking_with_timeout(
     func: Callable[..., T],
     *args: Any,
@@ -68,7 +86,10 @@ async def run_blocking_with_timeout(
         except asyncio.TimeoutError:
             last_exc = TimeoutError(f"{label} 调用超时（>{timeout:.0f}s）")
             logger.warning("[%s] 调用超时(%.0fs) 第 %d/%d 次", label, timeout, attempt, retries)
-        except Exception as exc:  # noqa: BLE001 - 统一兜底重试
+        except AIServiceException:
+            # 业务错误（配额耗尽 / 内容审核等）重试无意义，立即抛出
+            raise
+        except Exception as exc:  # noqa: BLE001 - 网络类错误统一兜底重试
             last_exc = exc
             logger.warning("[%s] 调用异常 第 %d/%d 次: %s", label, attempt, retries, exc)
     assert last_exc is not None

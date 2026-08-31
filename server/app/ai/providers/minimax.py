@@ -29,11 +29,6 @@ logger = logging.getLogger(__name__)
 # HTTP 请求超时（秒）
 _REQUEST_TIMEOUT = 120.0
 
-# MiniMax 支持的宽高比映射（与 API 文档对齐）
-_VALID_ASPECT_RATIOS = {
-    "1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9",
-}
-
 
 class MinimaxProvider(ImageProvider):
     """MiniMax 图像生成 Provider"""
@@ -68,6 +63,11 @@ class MinimaxProvider(ImageProvider):
         cfg_height = cfg.get("height")
         cfg_seed = cfg.get("seed")
 
+        # 尺寸优先级：resolution（如 1024*1024）> width/height > ratio
+        from app.ai.dashscope_utils import parse_resolution
+
+        parsed = parse_resolution(cfg.get("resolution"))
+
         # 构建请求体
         body: dict[str, Any] = {
             "model": model,
@@ -78,17 +78,17 @@ class MinimaxProvider(ImageProvider):
         if cfg_watermark is not None:
             body["aigc_watermark"] = bool(cfg_watermark)
 
-        # 尺寸：配置 width/height 优先，否则使用 ratio
-        if cfg_width and cfg_height:
+        # 尺寸：resolution / width/height 优先，否则默认 2K（2048×2048）
+        if parsed:
             # MiniMax API: aspect_ratio 优先于 width/height，所以使用自定义宽高时不传 aspect_ratio
+            body["width"] = parsed[0]
+            body["height"] = parsed[1]
+        elif cfg_width and cfg_height:
             body["width"] = int(cfg_width)
             body["height"] = int(cfg_height)
         else:
-            ratio = request.options.ratio or "1:1"
-            if ratio in _VALID_ASPECT_RATIOS:
-                body["aspect_ratio"] = ratio
-            else:
-                body["aspect_ratio"] = "1:1"
+            body["width"] = 2048
+            body["height"] = 2048
 
         # 随机种子：仅在明确设置时传入
         if cfg_seed is not None:

@@ -28,6 +28,7 @@ class DashScopeConfigRead(BaseModel):
     width: int | None = Field(None, description="图片宽度（像素），为空时不设置")
     height: int | None = Field(None, description="图片高度（像素），为空时不设置")
     seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
+    resolution: str | None = Field(None, description="分辨率（如 1024*1024），优先于宽高")
     timeout: int | None = Field(
         None,
         description="单次调用超时（秒），为空时使用默认值 300",
@@ -67,6 +68,7 @@ class MinimaxConfigRead(BaseModel):
     width: int | None = Field(None, description="图片宽度（像素，512-2048 且为 8 的倍数），为空时不设置")
     height: int | None = Field(None, description="图片高度（像素，512-2048 且为 8 的倍数），为空时不设置")
     seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
+    resolution: str | None = Field(None, description="分辨率（如 1024*1024），优先于宽高")
 
 
 class VolcengineConfigRead(BaseModel):
@@ -81,6 +83,7 @@ class VolcengineConfigRead(BaseModel):
     width: int | None = Field(None, description="图片宽度（像素），为空时不设置")
     height: int | None = Field(None, description="图片高度（像素），为空时不设置")
     seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
+    resolution: str | None = Field(None, description="分辨率（如 1024*1024），优先于宽高")
 
 
 class ModelConfig(BaseModel):
@@ -181,6 +184,7 @@ class DashScopeConfigUpdate(BaseModel):
     width: int | None = None
     height: int | None = None
     seed: int | None = None
+    resolution: str | None = None
     timeout: int | None = None
     prompt_extend: bool | None = None
 
@@ -214,6 +218,7 @@ class MinimaxConfigUpdate(BaseModel):
     width: int | None = None
     height: int | None = None
     seed: int | None = None
+    resolution: str | None = None
 
 
 class VolcengineConfigUpdate(BaseModel):
@@ -228,6 +233,7 @@ class VolcengineConfigUpdate(BaseModel):
     width: int | None = None
     height: int | None = None
     seed: int | None = None
+    resolution: str | None = None
 
 
 class ModelConfigUpdate(BaseModel):

@@ -53,8 +53,12 @@ class ConvertRequest(BaseModel):
     location: str | None = Field(default=None, description="拍摄地点")
     # 签名（可选）：马克笔童画等需要签名的技能使用
     signature: str | None = Field(default=None, description="签名文字")
+    # 通用输入变量（可选）：技能声明的 inputVariables 由用户填写，替换提示词模板中的 {{KEY}} 占位符
+    variables: dict[str, str] | None = Field(default=None, description="通用输入变量（key=技能声明的变量名，value=用户填写值）")
     # 重新生成时用户填写的修改意见（可选）：将在原提示词基础上叠加后交给模型
     feedback: str | None = Field(default=None, description="重新生成的修改意见")
+    # 原任务ID（可选）：提供时在原任务内重新生成并替换同 provider 的旧结果，不创建新任务
+    regen_task_id: str | None = Field(default=None, description="原任务ID（重新生成替换模式）")
 
 
 class AnalyzeRequest(BaseModel):
@@ -73,6 +77,8 @@ class AnalyzeRequest(BaseModel):
     extra_prompt: str | None = Field(default=None, description="额外提示词")
     # 拍摄地点（可选）：冰箱贴等需要英文城市名排版的技能使用，如「昆明/中国」
     location: str | None = Field(default=None, description="拍摄地点")
+    # 通用输入变量（可选）：技能声明的 inputVariables 由用户填写，替换提示词模板中的 {{KEY}} 占位符
+    variables: dict[str, str] | None = Field(default=None, description="通用输入变量")
 
 
 class AnalyzeResponse(BaseModel):

@@ -9,6 +9,15 @@ import { Plus } from '@element-plus/icons-vue'
 import { request } from '@/api/request'
 
 // 类型定义（与后端 camelCase 响应字段对齐）
+interface SkillInputVariable {
+  key: string
+  label: string
+  placeholder?: string
+  hint?: string
+  required?: boolean
+  default?: string
+  translate?: boolean
+}
 interface SkillConfigItem {
   id: number
   skillId: string
@@ -23,6 +32,7 @@ interface SkillConfigItem {
   previewUrls: string[]
   isActive: boolean
   needAnalysis: boolean
+  inputVariables?: SkillInputVariable[]
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -40,6 +50,7 @@ interface SkillConfigCreate {
   previewUrls?: string[]
   isActive?: boolean
   needAnalysis?: boolean
+  inputVariables?: SkillInputVariable[]
   sortOrder?: number
 }
 interface SkillConfigUpdate {
@@ -54,6 +65,7 @@ interface SkillConfigUpdate {
   previewUrls?: string[]
   isActive?: boolean
   needAnalysis?: boolean
+  inputVariables?: SkillInputVariable[]
   sortOrder?: number
 }
 
@@ -80,6 +92,7 @@ const formData = ref<SkillConfigCreate & { id?: number }>({
   previewUrls: [],
   isActive: true,
   needAnalysis: true,
+  inputVariables: [],
   sortOrder: 100,
 })
 
@@ -126,6 +139,7 @@ function openCreateDialog() {
     previewUrls: [],
     isActive: true,
     needAnalysis: true,
+    inputVariables: [],
     sortOrder: 100,
   }
   editDialogVisible.value = true
@@ -149,6 +163,7 @@ function openEditDialog(skill: SkillConfigItem) {
     previewUrls: skill.previewUrls || (skill.previewUrl ? [skill.previewUrl] : []),
     isActive: skill.isActive,
     needAnalysis: skill.needAnalysis,
+    inputVariables: skill.inputVariables?.map((v) => ({ ...v })) || [],
     sortOrder: skill.sortOrder,
   }
   editDialogVisible.value = true
@@ -189,6 +204,7 @@ async function saveSkill() {
         previewUrls: formData.value.previewUrls,
         isActive: formData.value.isActive,
         needAnalysis: formData.value.needAnalysis,
+        inputVariables: formData.value.inputVariables,
         sortOrder: formData.value.sortOrder,
       }
       await request({
@@ -287,6 +303,27 @@ function removePreview(index: number) {
   } else {
     formData.value.previewUrl = ''
   }
+}
+
+// 添加输入变量
+function addInputVariable() {
+  if (!formData.value.inputVariables) {
+    formData.value.inputVariables = []
+  }
+  formData.value.inputVariables.push({
+    key: '',
+    label: '',
+    placeholder: '',
+    hint: '',
+    required: false,
+    default: '',
+    translate: false,
+  })
+}
+
+// 移除输入变量
+function removeInputVariable(index: number) {
+  formData.value.inputVariables?.splice(index, 1)
 }
 
 // 获取状态标签类型
@@ -472,6 +509,62 @@ onMounted(() => {
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="输入变量">
+          <div class="skill-manager__iv-list">
+            <div
+              v-for="(iv, index) in formData.inputVariables || []"
+              :key="index"
+              class="skill-manager__iv-item"
+            >
+              <div class="skill-manager__iv-row">
+                <el-input
+                  v-model="iv.key"
+                  placeholder="变量key（如 location）"
+                  style="width: 160px"
+                />
+                <el-input
+                  v-model="iv.label"
+                  placeholder="标签（如 拍摄地点）"
+                  style="width: 140px"
+                />
+                <el-input
+                  v-model="iv.placeholder"
+                  placeholder="占位提示"
+                  style="width: 180px"
+                />
+                <el-button
+                  type="danger"
+                  size="small"
+                  circle
+                  @click="removeInputVariable(index)"
+                >
+                  ×
+                </el-button>
+              </div>
+              <div class="skill-manager__iv-row">
+                <el-input
+                  v-model="iv.hint"
+                  placeholder="辅助提示（如：将自动翻译为英文）"
+                  style="width: 280px"
+                />
+                <el-input
+                  v-model="iv.default"
+                  placeholder="默认值（留空则未填写时替换为空）"
+                  style="width: 240px"
+                />
+                <el-checkbox v-model="iv.required">必填</el-checkbox>
+                <el-checkbox v-model="iv.translate">需翻译</el-checkbox>
+              </div>
+            </div>
+            <el-button size="small" @click="addInputVariable">
+              <el-icon><Plus /></el-icon>
+              添加变量
+            </el-button>
+            <span class="skill-manager__hint">
+              提示词模板中写 {{key}} 占位符，前端据此渲染输入框
+            </span>
+          </div>
+        </el-form-item>
         <el-form-item label="排序权重">
           <el-input-number
             v-model="formData.sortOrder"
@@ -544,5 +637,26 @@ onMounted(() => {
   margin-left: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.skill-manager__iv-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skill-manager__iv-item {
+  padding: 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skill-manager__iv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>

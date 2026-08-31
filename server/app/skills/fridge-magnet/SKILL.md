@@ -5,6 +5,13 @@ provider: qianwen
 ratio: 2:3
 subject_ratio: 55%
 category: 冰箱贴
+input_variables:
+  - key: location
+    label: 拍摄地点
+    placeholder: 如 昆明/中国
+    hint: 将自动翻译为英文城市名，印在海报底部
+    required: true
+    translate: true
 ---
 
 # 旅行冰箱贴（Travel Fridge Magnet Poster）技能

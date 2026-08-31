@@ -11,6 +11,8 @@ export interface AnalyzeParams {
   location?: string
   /** 签名文字：马克笔童画等需要签名的技能使用 */
   signature?: string
+  /** 通用输入变量：技能声明的 inputVariables 由用户填写，替换提示词模板中的 {{KEY}} 占位符 */
+  variables?: Record<string, string>
 }
 
 /** 提交转换任务参数（skillId 可选，默认 photo-revival） */
@@ -26,8 +28,12 @@ export interface ConvertParams {
   location?: string
   /** 签名文字：马克笔童画等需要签名的技能使用 */
   signature?: string
+  /** 通用输入变量：技能声明的 inputVariables 由用户填写，替换提示词模板中的 {{KEY}} 占位符 */
+  variables?: Record<string, string>
   /** 重新生成时用户填写的修改意见（将在原提示词基础上叠加后交给模型） */
   feedback?: string
+  /** 原任务ID：提供时在原任务内重新生成并替换同 provider 的旧结果，不创建新任务 */
+  regenTaskId?: string
 }
 
 /**

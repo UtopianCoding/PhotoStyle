@@ -37,6 +37,28 @@ export interface Skill {
   previews: string[]
   category: string
   needAnalysis: boolean
+  /** 输入变量：用户需手动填写，替换提示词模板中的 {{KEY}} 占位符 */
+  inputVariables?: SkillInputVariable[]
+}
+
+/**
+ * 技能输入变量（如地点、签名等，用户在转换前手动填写）
+ */
+export interface SkillInputVariable {
+  /** 变量 key（提示词模板中写 {{key}}，大小写不敏感） */
+  key: string
+  /** 输入框标签（如「拍摄地点」） */
+  label: string
+  /** 输入框占位提示 */
+  placeholder?: string
+  /** 辅助提示文字 */
+  hint?: string
+  /** 是否必填 */
+  required?: boolean
+  /** 默认值（用户留空时使用） */
+  default?: string
+  /** 是否需要文本模型翻译（如地点翻译为英文） */
+  translate?: boolean
 }
 
 /**
@@ -252,6 +274,7 @@ export interface DashScopeConfig {
   width: number | null
   height: number | null
   seed: number | null
+  resolution: string | null
   timeout: number | null
   promptExtend: boolean | null
 }
@@ -381,6 +404,7 @@ export interface SystemConfigUpdate {
       width?: number | null
       height?: number | null
       seed?: number | null
+      resolution?: string | null
       timeout?: number | null
       promptExtend?: boolean | null
     }

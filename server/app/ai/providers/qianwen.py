@@ -22,7 +22,6 @@ from app.ai.schemas import (
     ImageProviderResponse,
     ImageResult,
 )
-from app.config.dashscope import get_image_size
 from app.core.exceptions import AIServiceException
 from app.services.model_config_store import model_config_store
 
@@ -89,7 +88,9 @@ class QianwenProvider(ImageProvider):
             self._generate_sync,
             request,
             timeout=timeout,
-            retries=1,
+            # 网络瞬时抖动（SSL 中断/超时）自动重试 2 次；
+            # 配额/审核类业务错误会快速失败，不放大延迟
+            retries=3,
             label="千问图像生成",
             prompt_extend=prompt_extend,
         )
@@ -108,10 +109,15 @@ class QianwenProvider(ImageProvider):
 
         # 模型名统一小写
         model = (request.model or cfg.get("model_image", "qwen-image-3.0-pro")).lower()
-        # 尺寸优先级：配置 width/height > options.size > ratio 默认映射
+        # 尺寸优先级：resolution（如 1024*1024）> width/height > options.size > ratio 默认映射
+        from app.ai.dashscope_utils import parse_resolution
+
+        parsed = parse_resolution(cfg.get("resolution"))
         cfg_width = cfg.get("width")
         cfg_height = cfg.get("height")
-        if cfg_width and cfg_height:
+        if parsed:
+            size = f"{parsed[0]}*{parsed[1]}"
+        elif cfg_width and cfg_height:
             size = f"{cfg_width}*{cfg_height}"
         else:
             size = request.options.size or get_image_size(request.options.ratio)
@@ -177,6 +183,11 @@ class QianwenProvider(ImageProvider):
         logger.info(
             "[千问图像生成] 调用参数: model=%s, size=%s, n=%s, watermark=%s, seed=%s, prompt_extend=%s, has_image=%s, ref_images=%d, prompt=%s",
             model, size, n, cfg_watermark, cfg_seed, prompt_extend, bool(request.image_url), len(request.reference_images), prompt[:200],
+        )
+        _masked_key = f"{api_key[:8]}****{api_key[-4:]}" if api_key else "(未配置)"
+        logger.debug(
+            "[千问图像生成] 请求详情: url=%s, api_key=%s, model=%s, size=%s, n=%s, watermark=%s, seed=%s",
+            dashscope.base_http_api_url, _masked_key, model, size, n, cfg_watermark, cfg_seed,
         )
         logger.debug("[千问图像生成] 完整 messages: %s", json.dumps(messages, ensure_ascii=False, default=str))
 

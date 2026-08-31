@@ -43,6 +43,7 @@ const form = reactive({
       workspaceId: '',
       region: '',
       watermark: false as boolean,
+      resolution: '2048*2048',
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
@@ -66,6 +67,7 @@ const form = reactive({
       baseUrl: '',
       modelImage: '',
       watermark: false as boolean,
+      resolution: '2048*2048',
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
@@ -75,6 +77,7 @@ const form = reactive({
       baseUrl: '',
       modelImage: '',
       watermark: false as boolean,
+      resolution: '2048*2048',
       width: null as number | null,
       height: null as number | null,
       seed: null as number | null,
@@ -182,6 +185,7 @@ function fillForm(data: SystemConfig) {
     width: qw.width,
     height: qw.height,
     seed: qw.seed,
+    resolution: qw.resolution ?? '2048*2048',
     timeout: qw.timeout ?? null,
     promptExtend: qw.promptExtend ?? true,
   }
@@ -206,6 +210,7 @@ function fillForm(data: SystemConfig) {
     baseUrl: mm.baseUrl,
     modelImage: mm.modelImage,
     watermark: mm.watermark ?? false,
+    resolution: mm.resolution ?? '2048*2048',
     width: mm.width,
     height: mm.height,
     seed: mm.seed,
@@ -217,6 +222,7 @@ function fillForm(data: SystemConfig) {
     baseUrl: vc.baseUrl,
     modelImage: vc.modelImage,
     watermark: vc.watermark ?? false,
+    resolution: vc.resolution ?? '2048*2048',
     width: vc.width,
     height: vc.height,
     seed: vc.seed,
@@ -251,6 +257,7 @@ function buildPayload(): SystemConfigUpdate {
   qianwen.workspaceId = ds.workspaceId
   if (ds.region) qianwen.region = ds.region
   qianwen.watermark = ds.watermark
+  if (ds.resolution) qianwen.resolution = ds.resolution
   qianwen.width = ds.width
   qianwen.height = ds.height
   qianwen.seed = ds.seed
@@ -280,6 +287,7 @@ function buildPayload(): SystemConfigUpdate {
   if (mm.baseUrl) minimax.baseUrl = mm.baseUrl
   if (mm.modelImage) minimax.modelImage = mm.modelImage
   minimax.watermark = mm.watermark
+  if (mm.resolution) minimax.resolution = mm.resolution
   minimax.width = mm.width
   minimax.height = mm.height
   minimax.seed = mm.seed
@@ -291,6 +299,7 @@ function buildPayload(): SystemConfigUpdate {
   if (vc.baseUrl) volcengine.baseUrl = vc.baseUrl
   if (vc.modelImage) volcengine.modelImage = vc.modelImage
   volcengine.watermark = vc.watermark
+  if (vc.resolution) volcengine.resolution = vc.resolution
   volcengine.width = vc.width
   volcengine.height = vc.height
   volcengine.seed = vc.seed
@@ -598,6 +607,10 @@ onMounted(() => {
                     <el-switch v-model="form.model.qianwen.watermark" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
                     <div class="field-hint">开启后将在生成图片上添加水印，留空则不设置</div>
                   </el-form-item>
+                  <el-form-item label="分辨率">
+                    <el-input v-model="form.model.qianwen.resolution" placeholder="如 1024*1024、768*1024，优先于宽高" />
+                    <div class="field-hint">填写后生成时优先使用该分辨率</div>
+                  </el-form-item>
                   <el-form-item label="图片宽度（像素）">
                     <el-input-number v-model="form.model.qianwen.width" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
                   </el-form-item>
@@ -707,6 +720,10 @@ onMounted(() => {
                     <el-switch v-model="form.model.minimax.watermark" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
                     <div class="field-hint">开启后将在生成图片上添加「AI 生成」水印</div>
                   </el-form-item>
+                  <el-form-item label="分辨率">
+                    <el-input v-model="form.model.minimax.resolution" placeholder="如 1024*1024、768*1024，优先于宽高" />
+                    <div class="field-hint">填写后生成时优先使用该分辨率</div>
+                  </el-form-item>
                   <el-form-item label="图片宽度（像素）">
                     <el-input-number v-model="form.model.minimax.width" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />
                     <div class="field-hint">取值范围 512-2048，且必须是 8 的倍数</div>
@@ -748,6 +765,10 @@ onMounted(() => {
                   <el-form-item label="AI 水印">
                     <el-switch v-model="form.model.volcengine.watermark" :active-value="true" :inactive-value="false" active-text="开启" inactive-text="关闭" />
                     <div class="field-hint">开启后将在生成图片右下角添加「AI 生成」水印</div>
+                  </el-form-item>
+                  <el-form-item label="分辨率">
+                    <el-input v-model="form.model.volcengine.resolution" placeholder="如 1024*1024、768*1024，优先于宽高" />
+                    <div class="field-hint">填写后生成时优先使用该分辨率</div>
                   </el-form-item>
                   <el-form-item label="图片宽度（像素）">
                     <el-input-number v-model="form.model.volcengine.width" :min="512" :max="2048" :step="8" controls-position="right" placeholder="留空不设置" />

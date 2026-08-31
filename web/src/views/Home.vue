@@ -9,7 +9,7 @@ import { listSkills } from '@/api/skill'
 import { useImageStore } from '@/stores/image'
 import { useStyleStore } from '@/stores/style'
 import { useConvert } from '@/composables/useConvert'
-import type { Skill } from '@/types'
+import type { Skill, SkillInputVariable } from '@/types'
 
 const router = useRouter()
 const imageStore = useImageStore()
@@ -21,11 +21,10 @@ const selectedSkill = computed<Skill | undefined>(() =>
   styleStore.skills.find((s) => s.id === styleStore.selectedSkillId),
 )
 
-// 是否选中冰箱贴技能（需要填写拍摄地点）
-const isFridgeMagnet = computed(() => styleStore.selectedSkillId === 'fridge-magnet')
-
-// 是否选中马克笔童画技能（需要填写签名）
-const isMarkerDoodle = computed(() => styleStore.selectedSkillId === 'marker-child-doodle')
+// 当前技能需要用户填写的输入变量（如地点、签名）
+const inputVariables = computed<SkillInputVariable[]>(
+  () => selectedSkill.value?.inputVariables || [],
+)
 
 // 是否需要分析图片（根据数据库配置，needAnalysis=false 的技能无需分析）
 const needsAnalysis = computed(() => selectedSkill.value?.needAnalysis ?? false)
@@ -33,14 +32,10 @@ const needsAnalysis = computed(() => selectedSkill.value?.needAnalysis ?? false)
 // 是否允许点击「分析图片」：需要该技能配置了 needAnalysis 且已上传图片
 const canAnalyze = computed(() => needsAnalysis.value && !!imageStore.imageId)
 
-// 是否允许点击「开始转换」：必须已上传图片；冰箱贴需额外填地点
+// 是否允许点击「开始转换」：必须已上传图片；必填输入变量需填完
 const canConvert = computed(() => {
   if (!imageStore.imageId) return false
-  if (styleStore.selectedSkillId === 'fridge-magnet') {
-    return styleStore.fridgeLocation.trim().length > 0
-  }
-  // 其余风格：不强制要求先分析，后端会自动后台分析
-  return true
+  return styleStore.isRequiredVariablesFilled()
 })
 
 /** 加载技能列表 */
@@ -120,30 +115,24 @@ watch(
         卡片内为各风格的示例效果，点击选中后再进行分析
       </p>
 
-      <!-- 冰箱贴：拍摄地点输入（自动翻译为英文城市名） -->
-      <div v-if="isFridgeMagnet" class="fridge-location">
-        <label class="fridge-location__label font-display">拍摄地点</label>
+      <!-- 技能输入变量：技能声明的 inputVariables 动态渲染（如冰箱贴地点、马克笔签名） -->
+      <div
+        v-for="iv in inputVariables"
+        :key="iv.key"
+        class="fridge-location"
+      >
+        <label class="fridge-location__label font-display">
+          {{ iv.label }}
+          <span v-if="iv.required" class="fridge-location__required">*</span>
+        </label>
         <input
-          v-model="styleStore.fridgeLocation"
+          v-model="styleStore.skillVariables[iv.key]"
           class="fridge-location__input"
           type="text"
-          placeholder="如 昆明/中国"
+          :placeholder="iv.placeholder || `请输入${iv.label}`"
           maxlength="40"
         />
-        <p class="fridge-location__hint">将自动翻译为英文城市名，印在海报底部</p>
-      </div>
-
-      <!-- 马克笔童画：签名输入 -->
-      <div v-if="isMarkerDoodle" class="fridge-location">
-        <label class="fridge-location__label font-display">签名</label>
-        <input
-          v-model="styleStore.markerSignature"
-          class="fridge-location__input"
-          type="text"
-          placeholder="默认 Utopian"
-          maxlength="20"
-        />
-        <p class="fridge-location__hint">英文签名，将潦草手写在右下角（留空则默认 Utopian）</p>
+        <p v-if="iv.hint" class="fridge-location__hint">{{ iv.hint }}</p>
       </div>
     </section>
 
@@ -376,6 +365,10 @@ watch(
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: 0.06em;
+}
+.fridge-location__required {
+  margin-left: 2px;
+  color: var(--color-primary);
 }
 .fridge-location__input {
   width: min(320px, 100%);

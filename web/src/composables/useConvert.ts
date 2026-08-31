@@ -54,13 +54,10 @@ export function useConvert() {
         skillId: styleStore.selectedSkillId || undefined,
         extraPrompt: styleStore.extraPrompt,
       }
-      // 冰箱贴技能需要拍摄地点，由后端翻译为英文城市名
-      if (styleStore.selectedSkillId === 'fridge-magnet') {
-        params.location = styleStore.fridgeLocation.trim()
-      }
-      // 马克笔童画技能需要签名文字
-      if (styleStore.selectedSkillId === 'marker-child-doodle') {
-        params.signature = styleStore.markerSignature.trim() || 'Utopian'
+      // 技能声明的输入变量（地点/签名等）随分析请求一并传递，供后端生成提示词
+      const vars = collectVariables()
+      if (Object.keys(vars).length > 0) {
+        params.variables = vars
       }
       const result = await analyzeApi(params)
       styleStore.setAnalysisResult(result)
@@ -80,6 +77,18 @@ export function useConvert() {
     }
   }
 
+  /** 收集当前技能需要用户填写的输入变量（仅非空值） */
+  function collectVariables(): Record<string, string> {
+    const vars: Record<string, string> = {}
+    const skill = styleStore.skills.find((s) => s.id === styleStore.selectedSkillId)
+    const defs = skill?.inputVariables || []
+    for (const def of defs) {
+      const value = (styleStore.skillVariables[def.key] || '').trim()
+      if (value) vars[def.key] = value
+    }
+    return vars
+  }
+
   /** 提交风格转换任务：优先使用用户选择的技能，否则使用推荐的技能 */
   async function convert(): Promise<StyleTask | null> {
     if (!imageStore.imageId) {
@@ -90,9 +99,9 @@ export function useConvert() {
       styleStore.selectedSkillId,
       styleStore.analysisResult,
     )
-    // 冰箱贴必须填写拍摄地点
-    if (skillId === 'fridge-magnet' && !styleStore.fridgeLocation.trim()) {
-      ElMessage.warning('请填写拍摄地点')
+    // 校验当前技能必填输入变量是否已填写
+    if (!styleStore.isRequiredVariablesFilled()) {
+      ElMessage.warning('请先填写必填输入内容（如拍摄地点）')
       return null
     }
     converting.value = true
@@ -106,13 +115,10 @@ export function useConvert() {
         finalPrompt: styleStore.analysisResult?.finalPrompt,
         poeticText: styleStore.selectedPoeticText || undefined,
       }
-      // 冰箱贴技能：把拍摄地点也带给后台，作为权威重生成提示词的依据
-      if (skillId === 'fridge-magnet') {
-        params.location = styleStore.fridgeLocation.trim()
-      }
-      // 马克笔童画技能：把签名文字也带给后台
-      if (skillId === 'marker-child-doodle') {
-        params.signature = styleStore.markerSignature.trim() || 'Utopian'
+      // 技能声明的输入变量（地点/签名等）随转换请求一并传递
+      const vars = collectVariables()
+      if (Object.keys(vars).length > 0) {
+        params.variables = vars
       }
       const task = await convertApi(params)
       taskStore.setTask(task)
@@ -135,6 +141,8 @@ export function useConvert() {
     feedback: string
     location?: string
     provider?: string
+    /** 原任务ID：提供时在原任务内替换同 provider 的旧结果（不创建新任务） */
+    regenTaskId?: string
   }): Promise<StyleTask | null> {
     if (!params.finalPrompt?.trim()) {
       ElMessage.warning('缺少原图提示词，无法重新生成')
@@ -153,7 +161,12 @@ export function useConvert() {
         feedback: params.feedback.trim(),
         location: params.location,
         provider: params.provider || '',
+        regenTaskId: params.regenTaskId,
       })
+      if (params.regenTaskId) {
+        // 原任务内替换：由结果页自行重启轮询，这里不启动独立轮询
+        return task
+      }
       taskStore.setTask(task)
       taskStore.poll()
       ElMessage.success('已提交重新生成任务')

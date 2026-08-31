@@ -226,6 +226,7 @@ class ModelConfigStore:
                 # 运行时可调：超时（秒，默认 300）与提示词自动扩展（默认开启）
                 "timeout": 300,
                 "prompt_extend": True,
+                "resolution": "2048*2048",
             },
             "dalle": {
                 "api_key": settings.dalle.api_key.get_secret_value(),
@@ -241,12 +242,14 @@ class ModelConfigStore:
                 "base_url": settings.minimax.base_url,
                 "model_image": settings.minimax.model_image,
                 "watermark": settings.minimax.watermark,
+                "resolution": "2048*2048",
             },
             "volcengine": {
                 "api_key": settings.volcengine.api_key.get_secret_value(),
                 "base_url": settings.volcengine.base_url,
                 "model_image": settings.volcengine.model_image,
                 "watermark": settings.volcengine.watermark,
+                "resolution": "2048*2048",
             },
             "doubao": {
                 "access_key": settings.doubao.access_key.get_secret_value(),

@@ -42,6 +42,7 @@ from app.core.skill_engine import SkillEngine
 from app.core.task_manager import TaskManager
 from app.database import async_session_maker
 from app.models.conversation import ModelInteraction
+from app.models.style_result import StyleResult
 from app.models.style_task import StyleTask
 from app.models.user import User
 from app.repositories.image_repo import ImageRepository
@@ -165,8 +166,8 @@ class StyleService:
             analysis_data = await self.analyzer.analyze_for_abstract(image.original_url)
         elif skill_id == "fridge-magnet":
             # 冰箱贴：固定模板，无需 VL 深度分析；
-            # 地址由文本模型翻译为英文后注入模板的 {{LOCATION}} 占位符。
-            raw_location = (payload.location or "").strip()
+            # 地址由文本模型翻译为英文后注入模板的 {{location}} 占位符。
+            raw_location = (payload.location or "").strip() or (payload.variables or {}).get("location", "").strip()
             if not raw_location:
                 raise AIServiceException("请填写冰箱贴拍摄地点，例如：昆明/中国")
             try:
@@ -290,7 +291,11 @@ class StyleService:
         elif skill_id == "marker-child-doodle":
             # 马克笔童画：固定模板风格，无需 VL 深度分析；
             # 直接通过 SkillEngine 按模板 + 原图地址 + 签名生成最终提示词。
-            raw_signature = (payload.signature or "").strip() or "Utopian"
+            raw_signature = (
+                (payload.signature or "").strip()
+                or (payload.variables or {}).get("signature", "").strip()
+                or "Utopian"
+            )
             final_prompt = await self.skill_engine.generate_prompt_async(
                 image_url=image.original_url,
                 skill_id=skill_id,
@@ -454,14 +459,19 @@ class StyleService:
         # 4. 序列化选项
         options_dict = payload.options.model_dump()
 
-        # 4.0 冰箱贴等需要地点的技能：把拍摄地点透传到后台任务，
-        # 供 _execute 阶段权威重生成提示词（即便前端传入了旧风格的 finalPrompt 也不会用错）。
+        # 4.0 通用输入变量：技能声明的 inputVariables 由用户填写（如地点、签名），
+        # 与旧版 location/signature 字段合并后透传到后台任务，替换提示词模板占位符。
+        variables: dict[str, str] = {}
+        if payload.variables:
+            for k, v in payload.variables.items():
+                if v is not None and str(v).strip():
+                    variables[str(k)] = str(v).strip()
         if payload.location:
-            options_dict["location"] = payload.location
-        
-        # 马克笔童画需要签名：透传到后台任务
+            variables["location"] = payload.location.strip()
         if payload.signature:
-            options_dict["signature"] = payload.signature
+            variables["signature"] = payload.signature.strip()
+        if variables:
+            options_dict["_variables"] = variables
 
         # 4.1 以技能声明的输出比例为准（前端通常不单独设置比例）。
         # 例如冰箱贴/城市海报声明 2:3，必须确保实际生成尺寸为 2:3 而非默认 3:4。
@@ -478,15 +488,41 @@ class StyleService:
             options_dict["_feedback"] = payload.feedback
 
         # 5. 创建任务
-        task = await self.task_manager.create_task(
-            user_id=user_id,
-            image_id=payload.image_id,
-            skill_id=payload.skill_id,
-            provider=payload.provider,  # 空字符串表示使用全局启用的全部模型
-            extra_prompt=payload.extra_prompt,
-            options_json=json.dumps(options_dict, ensure_ascii=False),
-        )
-        await self.db.commit()
+        regen_task_id = (payload.regen_task_id or "").strip()
+        if regen_task_id:
+            # ===== 重新生成替换模式：复用原任务，不创建新任务 =====
+            orig_task = await self.repo.get_task(regen_task_id)
+            if orig_task is None:
+                raise TaskNotFoundException(f"原任务 [{regen_task_id}] 不存在")
+            if orig_task.user_id != user_id:
+                raise ForbiddenException("无权操作该任务")
+            # 标记替换模式：_execute 生成成功后删除同 provider 旧结果
+            options_dict["_regen_replace"] = True
+            # 更新原任务（复用）
+            orig_task.options_json = json.dumps(options_dict, ensure_ascii=False)
+            orig_task.extra_prompt = payload.extra_prompt
+            orig_task.provider = payload.provider  # 空字符串表示使用全局启用的全部模型
+            orig_task.status = "pending"
+            orig_task.stage = "queued"
+            orig_task.progress = 0
+            orig_task.error_code = None
+            orig_task.error_message = None
+            orig_task.started_at = None
+            orig_task.completed_at = None
+            await self.db.commit()
+            task = orig_task
+            logger.info("重新生成替换模式：复用原任务 %s, provider=%s", task.task_id, payload.provider)
+        else:
+            # ===== 普通模式：创建新任务 =====
+            task = await self.task_manager.create_task(
+                user_id=user_id,
+                image_id=payload.image_id,
+                skill_id=payload.skill_id,
+                provider=payload.provider,  # 空字符串表示使用全局启用的全部模型
+                extra_prompt=payload.extra_prompt,
+                options_json=json.dumps(options_dict, ensure_ascii=False),
+            )
+            await self.db.commit()
 
         # 确定实际将使用的 Provider 列表（用于返回给前端）
         if payload.provider:
@@ -549,19 +585,26 @@ class StyleService:
         # 选项
         options = json.loads(task.options_json) if task.options_json else {}
 
-        # 从 options_json 中取出前端透传的预分析提示词 / 诗意小字 / 重新生成意见
+        # 从 options_json 中取出前端透传的预分析提示词 / 诗意小字 / 重新生成意见 / 通用输入变量
         final_prompt = options.pop("_final_prompt", None)
         poetic_text = options.pop("_poetic_text", None)
         feedback = options.pop("_feedback", None)
+        variables = options.pop("_variables", None) or {}
+        # 重新生成替换标记：生成成功后删除本任务中同 provider 的旧结果
+        regen_replace = bool(options.pop("_regen_replace", False))
 
-        # 加载技能配置，判断是否需要分析图片
-        need_analysis = True
+        # 加载技能配置（用于提示词模板 + 输入变量解析）
+        skill_config = None
         try:
             skill_config = await self.skill_engine.load_skill_async(task.skill_id)
-            need_analysis = skill_config.need_analysis
-            logger.info("[风格转换] 技能配置: skill_id=%s, need_analysis=%s", task.skill_id, need_analysis)
+            logger.info("[风格转换] 技能配置: skill_id=%s", task.skill_id)
         except Exception as exc:
-            logger.warning("[风格转换] 加载技能配置失败，默认需要分析: %s", exc)
+            logger.warning("[风格转换] 加载技能配置失败: %s", exc)
+
+        # 解析技能输入变量：translate=true 的变量（如地点）翻译为英文，其余原样
+        resolved_vars = await self._resolve_input_variables(skill_config, variables)
+        for k, v in resolved_vars.items():
+            options[k] = v
 
         # 基础提示词构建
         if final_prompt:
@@ -574,24 +617,8 @@ class StyleService:
             await self.db.commit()
             prompt = final_prompt
             analysis: dict[str, Any] = {}
-        elif not need_analysis:
-            # 技能配置标记为不需要分析：跳过 VL 分析，直接使用模板生成提示词
-            logger.info("[风格转换] 技能无需分析，跳过 VL 分析, skill_id=%s", task.skill_id)
-            await self.repo.update_task_status(
-                task.task_id, status="running", stage="generating", progress=30
-            )
-            await self.db.commit()
-            # 从数据库读取的提示词模板生成最终提示词（而非空字符串）
-            prompt = await self.skill_engine.generate_prompt_async(
-                image_url=image_url,
-                skill_id=task.skill_id,
-                extra_prompt=task.extra_prompt,
-                options=options,
-                image_analysis={},
-            )
-            analysis: dict[str, Any] = {}
         else:
-            # 无预分析结果，走原有流程：分析 → 生成提示词
+            # 每次转换前：先调用视觉模型分析图片，分析结果作为前缀拼接到技能提示词前
             # 阶段1：分析
             await self.repo.update_task_status(
                 task.task_id, status="running", stage="analyzing", progress=10
@@ -623,30 +650,31 @@ class StyleService:
             )
             logger.info("[风格转换] 阶段2: 提示词生成完成, task_id=%s, prompt=%s", task.task_id, prompt[:300])
 
-        # 阶段2.5：冰箱贴首次生成的模板重生成（仅当未传入 final_prompt 时，即首次生成）
+        # 阶段2.5：带 translate 输入变量的技能（如冰箱贴地点）首次生成时，
+        # 用翻译后的变量重新生成提示词（仅当未传入 final_prompt 时，即首次生成）。
         # 传入 final_prompt 的重新生成场景会直接走上面的 final_prompt 分支，不再重跑模板。
-        if task.skill_id == "fridge-magnet" and not final_prompt:
-            raw_loc = options.get("location") or ""
-            if raw_loc:
-                try:
-                    loc_en = await translate_location(raw_loc)
-                except Exception as exc:
-                    logger.warning("[风格转换] 冰箱贴地点翻译失败，使用原文: %s", exc)
-                    loc_en = raw_loc
+        if skill_config is not None and not final_prompt and variables:
+            translate_keys = {
+                var.key.strip().lower()
+                for var in (skill_config.input_variables or [])
+                if var.translate
+            }
+            has_translate_var = any(
+                (k in options or k.lower() in options)
+                for k in translate_keys
+                if k
+            )
+            if has_translate_var:
                 prompt = await self.skill_engine.generate_prompt_async(
                     image_url=image_url,
                     skill_id=task.skill_id,
                     extra_prompt=task.extra_prompt,
-                    options={"location": loc_en},
+                    options=options,
                 )
-                logger.info("[风格转换] 冰箱贴权威重生成提示词, task_id=%s, location=%s", task.task_id, loc_en)
-            elif not prompt:
-                # 既无地点也无预分析提示词：退回模板默认（City, Country）
-                prompt = await self.skill_engine.generate_prompt_async(
-                    image_url=image_url,
-                    skill_id=task.skill_id,
-                    extra_prompt=task.extra_prompt,
-                    options={},
+                logger.info(
+                    "[风格转换] translate 变量权威重生成提示词, task_id=%s, variables=%s",
+                    task.task_id,
+                    {k: v for k, v in resolved_vars.items() if k in translate_keys or k.lower() in translate_keys},
                 )
 
         # 水墨扁平重构插画首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
@@ -668,17 +696,6 @@ class StyleService:
                 options={},
             )
             logger.info("[风格转换] 视觉记忆明信片权威重生成提示词, task_id=%s", task.task_id)
-
-        # 马克笔童画首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
-        if task.skill_id == "marker-child-doodle" and not final_prompt and not prompt:
-            signature = options.get("signature", "Utopian")
-            prompt = await self.skill_engine.generate_prompt_async(
-                image_url=image_url,
-                skill_id=task.skill_id,
-                extra_prompt=task.extra_prompt,
-                options={"signature": signature},
-            )
-            logger.info("[风格转换] 马克笔童画权威重生成提示词, task_id=%s, signature=%s", task.task_id, signature)
 
         # 实景拼贴首次生成：固定模板，跳过 VL 分析后直接按模板生成提示词
         if task.skill_id == "scenes-gathered-zine" and not final_prompt and not prompt:
@@ -829,6 +846,7 @@ class StyleService:
                     provider_resp_str = json.dumps(
                         resp.raw_response or {}, ensure_ascii=False, default=str
                     )
+                    new_rids: list[str] = []
                     for r in resp.results:
                         rid = uuid.uuid4().hex
                         credits_for_this = credit_cost if not first_result_recorded else 0
@@ -849,6 +867,11 @@ class StyleService:
                             credits_used=credits_for_this,
                         )
                         result_records.append((rid, r.url))
+                        new_rids.append(rid)
+
+                    # 重新生成替换模式：删除本任务中同 provider 的旧结果（保留刚生成的新结果）
+                    if regen_replace:
+                        await self._delete_old_results_by_provider(_task_id, pid, new_rids)
 
                     # 记录成功的模型交互
                     await self._record_interaction(
@@ -909,6 +932,7 @@ class StyleService:
                 provider_resp_str = json.dumps(
                     response.raw_response or {}, ensure_ascii=False, default=str
                 )
+                new_rids: list[str] = []
                 for r in response.results:
                     rid = uuid.uuid4().hex
                     credits_for_this = credit_cost if not first_result_recorded else 0
@@ -929,6 +953,11 @@ class StyleService:
                         credits_used=credits_for_this,
                     )
                     result_records.append((rid, r.url))
+                    new_rids.append(rid)
+
+                # 重新生成替换模式：删除本任务中同 provider 的旧结果（保留刚生成的新结果）
+                if regen_replace:
+                    await self._delete_old_results_by_provider(task.task_id, task.provider, new_rids)
 
                 duration_ms = int((time.monotonic() - started_at) * 1000)
                 provider_cfg = model_config_store.get_config(task.provider) or {}
@@ -1009,6 +1038,71 @@ class StyleService:
                     provider_url=provider_url,
                 )
             )
+
+    # -------------------- 输入变量解析 --------------------
+
+    async def _delete_old_results_by_provider(
+        self, task_id: str, provider: str, keep_result_ids: list[str]
+    ) -> None:
+        """
+        重新生成替换模式：删除指定任务中同 provider 的旧结果。
+
+        Args:
+            task_id: 任务ID
+            provider: 要替换的 provider（空字符串表示全部 provider）
+            keep_result_ids: 刚生成的新结果ID，需保留不删
+        """
+        stmt = select(StyleResult).where(StyleResult.task_id == task_id)
+        result = await self.db.execute(stmt)
+        for old in result.scalars().all():
+            if old.result_id in keep_result_ids:
+                continue
+            if provider and old.provider != provider:
+                continue
+            await self.db.delete(old)
+        await self.db.flush()
+        logger.info("[风格转换] 替换模式：已删除 %s 旧结果, task_id=%s, provider=%s",
+                    "同 provider" if provider else "全部", task_id, provider or "(all)")
+
+    async def _resolve_input_variables(
+        skill_config: Any, variables: dict[str, str]
+    ) -> dict[str, str]:
+        """
+        解析技能输入变量为最终值。
+
+        - translate=true 的变量（如冰箱贴地点）调用文本模型翻译为英文；
+        - 其余变量原样保留。
+
+        Args:
+            skill_config: 技能配置（可为 None，此时仅原样返回变量）
+            variables: 用户填写的原始变量（key -> value）
+
+        Returns:
+            解析后的变量字典（key -> 最终值），已去除空值与首尾空白。
+        """
+        if not variables:
+            return {}
+        declared: dict[str, Any] = {}
+        if skill_config is not None:
+            for var in (getattr(skill_config, "input_variables", None) or []):
+                key = (getattr(var, "key", "") or "").strip()
+                if key:
+                    declared[key.lower()] = var
+
+        resolved: dict[str, str] = {}
+        for raw_key, raw_value in variables.items():
+            key = str(raw_key).strip()
+            value = str(raw_value).strip()
+            if not key or not value:
+                continue
+            var = declared.get(key.lower())
+            if var is not None and getattr(var, "translate", False):
+                try:
+                    value = await translate_location(value)
+                except Exception as exc:
+                    logger.warning("[风格转换] 输入变量 %s 翻译失败，使用原文: %s", key, exc)
+            resolved[key] = value
+        return resolved
 
     # -------------------- 任务状态 --------------------
 

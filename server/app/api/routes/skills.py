@@ -64,6 +64,10 @@ class SkillSummary(BaseModel):
     category: str = "默认"
     # 是否需要分析图片（数据库配置，默认 True）
     need_analysis: bool = True
+    # 输入变量（用户需手动填写，替换提示词模板 {{KEY}} 占位符）
+    input_variables: list[dict] = Field(
+        default_factory=list, description="输入变量列表（key/label/placeholder/hint/required/default/translate）"
+    )
 
 
 @router.get("", response_model=ApiResponse[list[SkillSummary]])
@@ -112,6 +116,7 @@ async def list_skills() -> ApiResponse[list[SkillSummary]]:
                 preview=preview,
                 previews=previews,
                 need_analysis=s.need_analysis,
+                input_variables=[v.to_dict() for v in (s.input_variables or [])],
             )
         )
     

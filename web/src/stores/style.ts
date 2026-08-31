@@ -12,10 +12,8 @@ export const useStyleStore = defineStore('style', () => {
   const selectedProvider = ref<string>('')
   // 附加提示词
   const extraPrompt = ref<string>('')
-  // 冰箱贴技能的拍摄地点（如「昆明/中国」），由后端翻译为英文城市名
-  const fridgeLocation = ref<string>('')
-  // 马克笔童画的签名文字（默认 Utopian）
-  const markerSignature = ref<string>('')
+  // 通用输入变量：技能声明的 inputVariables 由用户填写（key -> 用户输入值）
+  const skillVariables = ref<Record<string, string>>({})
   // 转换选项
   const options = ref<Record<string, unknown>>({})
   // 图片分析结果
@@ -43,6 +41,8 @@ export const useStyleStore = defineStore('style', () => {
       selectedPoeticText.value = ''
     }
     selectedSkillId.value = skillId
+    // 切换风格后清空上一技能的输入变量（避免把地点的值带到签名等场景）
+    skillVariables.value = {}
   }
 
   /** 设置模型服务方 */
@@ -55,14 +55,22 @@ export const useStyleStore = defineStore('style', () => {
     extraPrompt.value = prompt
   }
 
-  /** 设置冰箱贴拍摄地点 */
-  function setFridgeLocation(loc: string) {
-    fridgeLocation.value = loc
+  /** 设置通用输入变量（技能声明的 inputVariables） */
+  function setSkillVariable(key: string, value: string) {
+    skillVariables.value = { ...skillVariables.value, [key]: value }
   }
 
-  /** 设置马克笔童画签名 */
-  function setMarkerSignature(sig: string) {
-    markerSignature.value = sig
+  /** 获取当前选中技能的输入变量定义 */
+  function getCurrentInputVariables(): NonNullable<Skill['inputVariables']> {
+    const skill = skills.value.find((s) => s.id === selectedSkillId.value)
+    return skill?.inputVariables || []
+  }
+
+  /** 校验当前技能必填输入变量是否已填写 */
+  function isRequiredVariablesFilled(): boolean {
+    return getCurrentInputVariables()
+      .filter((v) => v.required)
+      .every((v) => (skillVariables.value[v.key] || '').trim().length > 0)
   }
 
   /** 设置转换选项 */
@@ -87,8 +95,7 @@ export const useStyleStore = defineStore('style', () => {
   function reset() {
     selectedProvider.value = ''
     extraPrompt.value = ''
-    fridgeLocation.value = ''
-    markerSignature.value = ''
+    skillVariables.value = {}
     options.value = {}
     analysisResult.value = null
     selectedPoeticText.value = ''
@@ -100,8 +107,7 @@ export const useStyleStore = defineStore('style', () => {
     selectedSkillId,
     selectedProvider,
     extraPrompt,
-    fridgeLocation,
-    markerSignature,
+    skillVariables,
     options,
     analysisResult,
     selectedPoeticText,
@@ -111,8 +117,9 @@ export const useStyleStore = defineStore('style', () => {
     setSkillId,
     setProvider,
     setExtraPrompt,
-    setFridgeLocation,
-    setMarkerSignature,
+    setSkillVariable,
+    getCurrentInputVariables,
+    isRequiredVariablesFilled,
     setOptions,
     setAnalysisResult,
     setPoeticText,

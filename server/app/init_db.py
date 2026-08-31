@@ -335,6 +335,7 @@ CREATE TABLE IF NOT EXISTS `skill_configs` (
   `category`          VARCHAR(64)    NOT NULL DEFAULT '默认' COMMENT '技能分类',
   `preview_url`       VARCHAR(512)   NULL                    COMMENT '预览图URL',
   `preview_urls`      TEXT           NULL                    COMMENT '多张预览图URL(JSON数组)',
+  `input_variables`   TEXT           NULL                    COMMENT '输入变量(JSON数组)',
   `is_active`         TINYINT(1)     NOT NULL DEFAULT 1      COMMENT '是否启用',
   `need_analysis`     TINYINT(1)     NOT NULL DEFAULT 1      COMMENT '是否需要图片分析',
   `sort_order`        INT            NOT NULL DEFAULT 100    COMMENT '排序权重',
@@ -361,6 +362,16 @@ async def ensure_skill_configs_table() -> None:
             await conn.execute(text("""
                 ALTER TABLE `skill_configs`
                 ADD COLUMN `preview_urls` TEXT NULL COMMENT '多张预览图URL(JSON数组)'
+            """))
+        # 检查并添加 input_variables 字段（兼容旧表）
+        result = await conn.execute(text("""
+            SELECT COUNT(*) FROM information_schema.columns 
+            WHERE table_name='skill_configs' AND column_name='input_variables'
+        """))
+        if result.scalar() == 0:
+            await conn.execute(text("""
+                ALTER TABLE `skill_configs`
+                ADD COLUMN `input_variables` TEXT NULL COMMENT '输入变量(JSON数组)'
             """))
 
 

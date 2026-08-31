@@ -63,10 +63,15 @@ async function onRegenerate() {
     finalPrompt: originalPrompt.value,
     feedback: feedback.value,
     provider: regenProvider.value,
+    // 原任务内替换：复用当前任务，生成成功后自动替换同模型旧结果
+    regenTaskId: taskId.value,
   })
   if (newTask) {
-    // 跳转到新的任务结果页（useTaskPolling 会在路由参数变化时自动重拉）
-    router.push(`/result/${newTask.taskId}`)
+    // 原任务内替换模式：不跳转新页，重新开始轮询当前任务
+    // （任务已被后端重置为 pending/running，轮询会自动更新结果）
+    stop()
+    task.value = null
+    start()
     showRegenerate.value = false
     feedback.value = ''
     regenProvider.value = ''

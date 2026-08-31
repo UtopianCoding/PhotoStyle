@@ -56,10 +56,15 @@ class VolcengineProvider(ImageProvider):
             base_url = base_url[: -len("/images/generations")]
         model = (request.model or cfg.get("model_image", "seedream-5-0-pro")).strip()
         prompt = request.prompt
-        # 尺寸优先级：配置 width/height > options.size > 默认 2048x2048
+        # 尺寸优先级：resolution（如 1024*1024）> width/height > options.size > 默认 2048x2048
+        from app.ai.dashscope_utils import parse_resolution
+
+        parsed = parse_resolution(cfg.get("resolution"))
         cfg_width = cfg.get("width")
         cfg_height = cfg.get("height")
-        if cfg_width and cfg_height:
+        if parsed:
+            size = f"{parsed[0]}x{parsed[1]}"
+        elif cfg_width and cfg_height:
             size = f"{int(cfg_width)}x{int(cfg_height)}"
         else:
             size = request.options.size or "2048x2048"

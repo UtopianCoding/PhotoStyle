@@ -306,6 +306,7 @@ export interface MinimaxConfig {
   width: number | null
   height: number | null
   seed: number | null
+  resolution: string | null
 }
 
 /**
@@ -319,6 +320,7 @@ export interface VolcengineConfig {
   width: number | null
   height: number | null
   seed: number | null
+  resolution: string | null
 }
 
 /**
@@ -428,6 +430,7 @@ export interface SystemConfigUpdate {
       width?: number | null
       height?: number | null
       seed?: number | null
+      resolution?: string | null
     }
     volcengine?: {
       apiKey?: string
@@ -437,6 +440,7 @@ export interface SystemConfigUpdate {
       width?: number | null
       height?: number | null
       seed?: number | null
+      resolution?: string | null
     }
   }
   storage?: {

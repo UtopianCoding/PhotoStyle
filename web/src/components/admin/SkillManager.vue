@@ -561,7 +561,7 @@ onMounted(() => {
               添加变量
             </el-button>
             <span class="skill-manager__hint">
-              提示词模板中写 {{key}} 占位符，前端据此渲染输入框
+              提示词模板中写 &#123;&#123;key&#125;&#125; 占位符，前端据此渲染输入框
             </span>
           </div>
         </el-form-item>

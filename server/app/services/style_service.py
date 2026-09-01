@@ -1064,6 +1064,7 @@ class StyleService:
         logger.info("[风格转换] 替换模式：已删除 %s 旧结果, task_id=%s, provider=%s",
                     "同 provider" if provider else "全部", task_id, provider or "(all)")
 
+    @staticmethod
     async def _resolve_input_variables(
         skill_config: Any, variables: dict[str, str]
     ) -> dict[str, str]:

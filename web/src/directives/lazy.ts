@@ -12,19 +12,6 @@ const PLACEHOLDER =
 // 记录已加载的 URL，避免重复触发 onload
 const loadedUrls = new WeakSet<HTMLElement>()
 
-function applyLazy(el: HTMLImageElement, src: string) {
-  const real = typeof src === 'string' ? src.trim() : ''
-  if (!real) return
-  if (loadedUrls.has(el) && el.dataset.lazySrc === real) return
-  // 更新目标 URL
-  el.dataset.lazySrc = real
-  if (el.complete && el.naturalWidth > 0) {
-    // 已加载过，直接替换（例如 v-for key 复用导致的值变化）
-    loadedUrls.add(el)
-  }
-  el.src = real
-}
-
 let sharedObserver: IntersectionObserver | null = null
 
 function getObserver(): IntersectionObserver {

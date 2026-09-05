@@ -150,6 +150,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   dalle: 'GPT Image 2',
   minimax: 'MiniMax',
   volcengine: '火山引擎',
+  gemini: 'Gemini',
   doubao: '豆包',
 }
 function providerLabel(pid: string): string {
@@ -216,7 +217,7 @@ function thumbProvider(item: HistoryItem, idx: number): string {
                   :key="tidx"
                   class="history-card__multi-cell"
                 >
-                  <img :src="thumb" :alt="item.skillId" loading="lazy" decoding="async" />
+                  <img v-lazy="thumb" :alt="item.skillId" decoding="async" />
                   <span v-if="thumbProvider(item, tidx)" class="history-card__provider-tag">
                     {{ providerLabel(thumbProvider(item, tidx)) }}
                   </span>
@@ -226,9 +227,8 @@ function thumbProvider(item: HistoryItem, idx: number): string {
               <template v-else>
                 <img
                   v-if="item.resultThumbnails[0]"
-                  :src="item.resultThumbnails[0]"
+                  v-lazy="item.resultThumbnails[0]"
                   :alt="item.skillId"
-                  loading="lazy"
                   decoding="async"
                 />
                 <!-- 无效果图时显示状态占位（pending/running/failed） -->

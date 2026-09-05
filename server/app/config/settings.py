@@ -200,6 +200,28 @@ class VolcengineConfig(BaseSettings):
 
 
 # ============================================================
+# Gemini（Google）配置
+# ============================================================
+class GeminiConfig(BaseSettings):
+    """Gemini 图像生成配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="GEMINI_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        protected_namespaces=(),
+    )
+
+    # Gemini API Key（敏感信息，在 Boft/Google AI Studio 获取）
+    api_key: SecretStr = SecretStr("")
+    # 接口基础地址（Boft 中转网关，也可填 Google 官方 generative language 端点）
+    base_url: str = "https://api-direct.boft.ai"
+    # 图像生成模型名（Nano Banana Pro 等 Gemini 图像模型）
+    model_image: str = "gemini-3-pro-image-preview"
+
+
+# ============================================================
 # MinIO 对象存储配置
 # ============================================================
 class MinIOConfig(BaseSettings):
@@ -421,6 +443,7 @@ class Settings:
         self._dalle: DalleConfig | None = None
         self._minimax: MinimaxConfig | None = None
         self._volcengine: VolcengineConfig | None = None
+        self._gemini: GeminiConfig | None = None
         self._minio: MinIOConfig | None = None
         self._oss: OSSConfig | None = None
         self._jwt: JWTConfig | None = None
@@ -478,6 +501,12 @@ class Settings:
         if self._volcengine is None:
             self._volcengine = VolcengineConfig()
         return self._volcengine
+
+    @property
+    def gemini(self) -> GeminiConfig:
+        if self._gemini is None:
+            self._gemini = GeminiConfig()
+        return self._gemini
 
     @property
     def minio(self) -> MinIOConfig:

@@ -347,10 +347,14 @@ Do NOT include any other text, explanation, or markdown."""
         import dashscope
         from dashscope import MultiModalConversation
 
-        # 从内存缓存读取配置（管理后台可热更新；DB 为空时回退 .env）
+        # 从独立视觉理解配置读取（后台可热更新；未单独配置时回退千问/.env）
         from app.services.model_config_store import model_config_store
 
-        cfg = model_config_store.get_config("qianwen") or {}
+        cfg = model_config_store.get_vision_config()
+        if not cfg.get("enabled", True):
+            logger.info("[FlipbookAI] 视觉理解模型已停用，跳过视觉调用")
+            return ""
+
         api_key = cfg.get("api_key") or settings.dashscope.api_key.get_secret_value()
         if not api_key:
             logger.error("[FlipbookAI] DashScope API Key 未配置")

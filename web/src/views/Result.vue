@@ -279,6 +279,10 @@ const keptResults = computed<StyleResult[]>(() => task.value?.results ?? [])
 // 主展示图 = keptResults[0]
 const firstResult = computed(() => keptResults.value[0] ?? null)
 const resultUrl = computed(() => firstResult.value?.resultUrl ?? '')
+// 卡片显示优先用缩略图（更小更快），无缩略图回退原图；预览点击后加载原图大图
+function resultThumb(r: StyleResult): string {
+  return r.thumbnailUrl || r.resultUrl || ''
+}
 // 是否已收藏（取第一张的收藏状态）
 const favorite = computed(() => firstResult.value?.favorite ?? false)
 
@@ -288,6 +292,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   dalle: 'GPT Image 2',
   minimax: 'MiniMax',
   volcengine: '火山引擎',
+  gemini: 'Gemini',
   doubao: '豆包',
 }
 /** 获取 Provider 显示名称 */
@@ -363,6 +368,12 @@ async function onRemoveResult(resultId: string) {
   deletingResultId.value = resultId
   try {
     const remaining = await removeTaskResults(taskId.value, [resultId])
+    if (remaining.length === 0) {
+      // 全部结果被删除：任务已被后端整体删除，返回上一页
+      ElMessage.success('已删除')
+      goBack()
+      return
+    }
     // 更新本地数据
     if (task.value) {
       task.value.results = remaining
@@ -573,12 +584,13 @@ function goBack() {
           </div>
           <div class="partial-results__img-wrap">
             <el-image
-              :src="r.resultUrl"
+              :src="resultThumb(r)"
               fit="contain"
               class="partial-results__img"
               preview-teleported
               :preview-src-list="partialPreviewList"
               :initial-index="originalUrl ? idx + 1 : idx"
+              lazy
             />
           </div>
         </div>
@@ -763,13 +775,14 @@ function goBack() {
             </div>
             <div class="multi-results__card-body">
               <el-image
-                :src="r.resultUrl"
+                :src="resultThumb(r)"
                 :preview-src-list="previewList"
                 :initial-index="originalUrl ? idx + 1 : idx"
                 fit="contain"
                 class="multi-results__card-img"
                 preview-teleported
                 hide-on-click-modal
+                lazy
               >
                 <template #placeholder>
                   <div class="result-col__placeholder">加载中…</div>
@@ -944,7 +957,7 @@ function goBack() {
               :class="{ 'poster-picker__item--active': posterSelectedId === r.resultId }"
               @click="posterSelectedId = r.resultId; onPosterImageChange()"
             >
-              <img :src="r.resultUrl" :alt="providerLabel(r.provider)" loading="lazy" decoding="async" />
+              <img v-lazy="resultThumb(r)" :alt="providerLabel(r.provider)" decoding="async" />
               <span class="poster-picker__item-label">{{ providerLabel(r.provider) }}</span>
               <span v-if="posterSelectedId === r.resultId" class="poster-picker__check">✓</span>
             </div>

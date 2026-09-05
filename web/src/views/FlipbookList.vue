@@ -36,10 +36,9 @@
             <div class="flipbook-cover__face">
               <img
                 v-if="book.coverUrl"
-                :src="book.coverUrl"
+                v-lazy="book.coverUrl"
                 :alt="book.title"
                 class="w-full h-full object-cover"
-                loading="lazy"
                 decoding="async"
               />
               <div v-else class="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#efe9dd] to-[#e2d9c9]">
@@ -184,10 +183,9 @@
         >
           <!-- 缩略图 + 懒加载：照片多、体积大时显著提速 -->
           <img
-            :src="img.thumbnailUrl"
+            v-lazy="img.thumbnailUrl"
             class="photo-grid__img"
             alt=""
-            loading="lazy"
             decoding="async"
           />
           <!-- 选中序号：按选择顺序 -->

@@ -330,7 +330,7 @@ function toggleFavorite(img: ChatImage, _f: boolean) {
                 <div class="msg__photo"
                      v-for="(img, i) in msg.images" :key="i"
                      @click="openPreview(img.url)">
-                  <img :src="img.thumbnail_url || img.url" :alt="img.label || '照片'" />
+                  <img v-lazy="img.thumbnail_url || img.url" :alt="img.label || '照片'" />
                 </div>
               </template>
               <template v-else>
@@ -376,7 +376,7 @@ function toggleFavorite(img: ChatImage, _f: boolean) {
                      class="sticker-cell"
                      :class="{ 'sticker-cell--failed': img.status === 'failed' }">
                   <img v-if="img.status !== 'failed'"
-                       :src="img.thumbnail_url || img.url"
+                       v-lazy="img.thumbnail_url || img.url"
                        @click="openPreview(img.url)" :alt="img.label" />
                   <div v-else class="sticker-cell__fail"><span>✗</span></div>
                   <span class="sticker-cell__label">{{ img.label }}</span>

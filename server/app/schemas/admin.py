@@ -86,6 +86,33 @@ class VolcengineConfigRead(BaseModel):
     resolution: str | None = Field(None, description="分辨率（如 1024*1024），优先于宽高")
 
 
+class GeminiConfigRead(BaseModel):
+    """Gemini 配置（脱敏）"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    api_key: str = Field("", description="API Key（脱敏）")
+    base_url: str
+    model_image: str
+    width: int | None = Field(None, description="图片宽度（像素），为空时不设置")
+    height: int | None = Field(None, description="图片高度（像素），为空时不设置")
+    seed: int | None = Field(None, description="随机数种子，为空时使用随机种子")
+    resolution: str | None = Field(None, description="分辨率（如 1024*1024），优先于宽高")
+    aspect_ratio: str | None = Field(None, description="输出比例（如 1:1 / 3:4 / 16:9），Gemini imageConfig.aspectRatio")
+    image_size: str | None = Field(None, description="输出尺寸档位（1K/2K/4K），Gemini imageConfig.imageSize")
+
+
+class VisionConfigRead(BaseModel):
+    """视觉理解模型配置（脱敏，独立于图像生成模型）"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    enabled: bool = Field(True, description="是否启用视觉理解")
+    api_key: str = Field("", description="API Key（脱敏）")
+    base_url: str = Field("", description="API 基础地址")
+    model_vision: str = Field("", description="视觉理解模型名（如 qwen3-vl-flash）")
+
+
 class ModelConfig(BaseModel):
     """模型配置（聚合多 provider + 默认路由）"""
 
@@ -103,6 +130,10 @@ class ModelConfig(BaseModel):
     minimax: MinimaxConfigRead
     # 火山引擎配置（provider_id=volcengine）
     volcengine: VolcengineConfigRead
+    # Gemini 配置（provider_id=gemini）
+    gemini: GeminiConfigRead
+    # 视觉理解模型配置（独立于图像生成）
+    vision: VisionConfigRead
 
 
 # ============================================================
@@ -236,6 +267,33 @@ class VolcengineConfigUpdate(BaseModel):
     resolution: str | None = None
 
 
+class GeminiConfigUpdate(BaseModel):
+    """Gemini 配置更新"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
+    api_key: str | None = None
+    base_url: str | None = None
+    model_image: str | None = None
+    width: int | None = None
+    height: int | None = None
+    seed: int | None = None
+    resolution: str | None = None
+    aspect_ratio: str | None = None
+    image_size: str | None = None
+
+
+class VisionConfigUpdate(BaseModel):
+    """视觉理解模型配置更新"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
+
+    enabled: bool | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    model_vision: str | None = None
+
+
 class ModelConfigUpdate(BaseModel):
     """模型配置更新"""
 
@@ -247,6 +305,8 @@ class ModelConfigUpdate(BaseModel):
     dalle: OpenAIConfigUpdate | None = None
     minimax: MinimaxConfigUpdate | None = None
     volcengine: VolcengineConfigUpdate | None = None
+    gemini: GeminiConfigUpdate | None = None
+    vision: VisionConfigUpdate | None = None
 
 
 class MinIOConfigUpdate(BaseModel):

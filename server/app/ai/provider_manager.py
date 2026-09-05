@@ -14,6 +14,7 @@ from typing import Iterable
 from app.ai.providers.base import ImageProvider
 from app.ai.providers.dalle import DalleProvider
 from app.ai.providers.doubao import DoubaoProvider
+from app.ai.providers.gemini import GeminiProvider
 from app.ai.providers.minimax import MinimaxProvider
 from app.ai.providers.qianwen import QianwenProvider
 from app.ai.providers.volcengine import VolcengineProvider
@@ -35,7 +36,7 @@ class ProviderManager:
         # 注册默认 Provider
         defaults: list[ImageProvider] = list(providers or [])
         if not defaults:
-            defaults = [QianwenProvider(), DoubaoProvider(), DalleProvider(), MinimaxProvider(), VolcengineProvider()]
+            defaults = [QianwenProvider(), DoubaoProvider(), DalleProvider(), MinimaxProvider(), VolcengineProvider(), GeminiProvider()]
 
         for p in defaults:
             self.register(p, append_fallback=True)

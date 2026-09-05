@@ -63,6 +63,13 @@ class HistoryService:
         task_ids = [t.task_id for t in tasks]
         results_map = await self.repo.get_results_by_tasks(task_ids)
 
+        # 惰性补回：发现缺缩略图的结果则后台生成（避免列表加载原图大 URL）
+        try:
+            from app.services.thumbnail_backfill import schedule_missing
+            schedule_missing([r for rs in results_map.values() for r in rs])
+        except Exception:  # noqa: BLE001
+            pass
+
         items: list[HistoryItem] = []
         for task in tasks:
             results = results_map.get(task.task_id, [])
@@ -172,13 +179,15 @@ class HistoryService:
         """
         删除指定结果，返回剩余结果列表。
 
+        若删除后任务无剩余结果，则连同任务一并删除并返回空列表。
+
         Args:
             user_id: 用户 ID
             task_id: 任务 ID
             result_ids_to_remove: 要删除的结果 ID 列表
 
         Returns:
-            剩余的结果列表（TaskResult 格式）
+            剩余的结果列表（TaskResult 格式）；空列表表示任务已整体删除
 
         Raises:
             NotFoundException: 任务不存在
@@ -201,10 +210,12 @@ class HistoryService:
         if invalid_ids:
             raise ValueError(f"结果 ID 不属于该任务: {invalid_ids}")
 
-        # 校验删除后至少保留 1 条结果
+        # 若删除后无剩余结果：整个任务已无意义，连同任务一并删除，返回空列表
         remaining_count = len(all_results) - len(result_ids_to_remove)
         if remaining_count < 1:
-            raise ValueError("至少需要保留 1 张结果图")
+            await self.repo.delete_task_and_results(task_id)
+            await self.db.commit()
+            return []
 
         # 删除指定结果
         await self.repo.batch_delete(result_ids_to_remove)

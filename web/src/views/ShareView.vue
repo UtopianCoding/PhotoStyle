@@ -66,6 +66,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   dalle: 'GPT Image 2',
   minimax: 'MiniMax',
   volcengine: '火山引擎',
+  gemini: 'Gemini',
   doubao: '豆包',
 }
 function providerLabel(providerId: string): string {

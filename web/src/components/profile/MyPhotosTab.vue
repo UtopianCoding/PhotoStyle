@@ -86,10 +86,9 @@ onMounted(() => {
           <!-- 图片预览 -->
           <div class="photo-card__preview">
             <img
-              :src="image.originalUrl"
+              v-lazy="image.thumbnailUrl || image.originalUrl"
               :alt="`图片 ${image.imageId}`"
               class="preview-img"
-              loading="lazy"
               decoding="async"
             />
           </div>

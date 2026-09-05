@@ -58,16 +58,20 @@ class ImageAnalyzer:
 
     def _sync_dashscope(self) -> str:
         """
-        从后台配置（千问 Provider）同步 Key / URL / 视觉模型并设置 SDK 全局地址。
+        从后台配置（独立视觉理解配置 _vision）同步 Key / URL / 视觉模型，
+        并设置 SDK 全局地址。未单独配置时回退到千问 Provider 的视觉配置（兼容旧部署）。
 
-        与图像生成（qianwen.py）使用同一套后台配置，避免分析仍用 .env 旧 Key 导致 401。
         返回 API Key；后台未配置时回退 .env。
+        Raises:
+            AIServiceException: 视觉理解模型被禁用时
         """
         from app.services.model_config_store import model_config_store
         import dashscope
         from app.ai.dashscope_utils import normalize_dashscope_base_url
 
-        cfg = model_config_store.get_config("qianwen") or {}
+        cfg = model_config_store.get_vision_config()
+        if not cfg.get("enabled", True):
+            raise AIServiceException("视觉理解模型已停用，请先在后台配置中开启")
         api_key = cfg.get("api_key") or settings.dashscope.api_key.get_secret_value()
         base_url = (cfg.get("base_url") or "").strip()
         dashscope.base_http_api_url = (

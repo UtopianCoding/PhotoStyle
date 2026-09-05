@@ -324,6 +324,31 @@ export interface VolcengineConfig {
 }
 
 /**
+ * Gemini 配置（敏感字段脱敏）
+ */
+export interface GeminiConfig {
+  apiKey: string
+  baseUrl: string
+  modelImage: string
+  width: number | null
+  height: number | null
+  seed: number | null
+  resolution: string | null
+  aspectRatio: string | null
+  imageSize: string | null
+}
+
+/**
+ * 视觉理解模型配置（独立于图像生成模型）
+ */
+export interface VisionConfig {
+  enabled: boolean
+  apiKey: string
+  baseUrl: string
+  modelVision: string
+}
+
+/**
  * 模型配置（聚合多 provider + 默认路由）
  */
 export interface ModelConfig {
@@ -335,6 +360,8 @@ export interface ModelConfig {
   dalle: OpenAIConfig
   minimax: MinimaxConfig
   volcengine: VolcengineConfig
+  gemini: GeminiConfig
+  vision: VisionConfig
 }
 
 /**
@@ -441,6 +468,23 @@ export interface SystemConfigUpdate {
       height?: number | null
       seed?: number | null
       resolution?: string | null
+    }
+    gemini?: {
+      apiKey?: string
+      baseUrl?: string
+      modelImage?: string
+      width?: number | null
+      height?: number | null
+      seed?: number | null
+      resolution?: string | null
+      aspectRatio?: string | null
+      imageSize?: string | null
+    }
+    vision?: {
+      enabled?: boolean
+      apiKey?: string
+      baseUrl?: string
+      modelVision?: string
     }
   }
   storage?: {

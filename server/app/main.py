@@ -190,6 +190,13 @@ async def on_startup() -> None:
         await ensure_flipbook_tables()
         # 加载 Provider 配置到内存缓存（首次启动从 .env 播种）
         await model_config_store.seed_from_env_if_empty()
+        # 存量缩略图惰性回补（异步，不阻塞启动）
+        try:
+            import asyncio
+            from app.services.thumbnail_backfill import backfill_missing
+            asyncio.create_task(backfill_missing(limit=300))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("调度缩略图回补失败: %s", exc)
     except Exception as exc:  # 建表失败不应阻断启动
         logger.warning("启动时确保数据表 / 字段存在失败: %s", exc)
     logger.info(

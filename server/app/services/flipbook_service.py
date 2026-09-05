@@ -369,6 +369,13 @@ class FlipbookService:
         )
         results = list(result.scalars().all())
 
+        # 惰性补回：发现缺缩略图的结果则后台生成（避免列表加载原图大 URL）
+        try:
+            from app.services.thumbnail_backfill import schedule_missing
+            schedule_missing(results)
+        except Exception:  # noqa: BLE001
+            pass
+
         photos = []
         for r in results:
             url = r.result_url

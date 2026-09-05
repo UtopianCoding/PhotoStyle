@@ -27,8 +27,8 @@ const saving = ref(false)
 // 背景音乐配置
 const bgmUrl = ref('')
 const bgmSaving = ref(false)
-// 模型 provider 当前激活的 tab（使用 provider_id：qianwen / dalle / minimax / volcengine）
-const activeProviderTab = ref<'qianwen' | 'dalle' | 'minimax' | 'volcengine'>('qianwen')
+// 模型 provider 当前激活的 tab（使用 provider_id：qianwen / dalle / minimax / volcengine / gemini）
+const activeProviderTab = ref<'qianwen' | 'dalle' | 'minimax' | 'volcengine' | 'gemini'>('qianwen')
 
 // 表单数据：直接对齐后端字段，CORS 来源用逗号分隔字符串维护
 const form = reactive({
@@ -82,6 +82,23 @@ const form = reactive({
       height: null as number | null,
       seed: null as number | null,
     },
+    gemini: {
+      apiKey: '',
+      baseUrl: 'https://api-direct.boft.ai',
+      modelImage: 'gemini-3-pro-image-preview',
+      resolution: '2048*2048',
+      aspectRatio: '',
+      imageSize: '2K',
+      width: null as number | null,
+      height: null as number | null,
+      seed: null as number | null,
+    },
+    vision: {
+      enabled: true as boolean,
+      apiKey: '',
+      baseUrl: '',
+      modelVision: '',
+    },
   },
   storage: {
     storageType: 'minio',
@@ -121,6 +138,7 @@ const providerOptions = [
   { label: 'GPT Image 2 (OpenAI)', value: 'dalle' },
   { label: 'MiniMax', value: 'minimax' },
   { label: '火山引擎 (Seedream)', value: 'volcengine' },
+  { label: 'Gemini (Google)', value: 'gemini' },
 ]
 
 /** 加载当前系统配置 */
@@ -131,7 +149,10 @@ async function loadConfig() {
     fillForm(data)
     // 默认激活 tab 跟随 defaultProvider
     const dp = data.model.defaultProvider
-    if (dp === 'dalle' || dp === 'minimax' || dp === 'qianwen' || dp === 'volcengine') {
+    if (
+      dp === 'dalle' || dp === 'minimax' || dp === 'qianwen' ||
+      dp === 'volcengine' || dp === 'gemini'
+    ) {
       activeProviderTab.value = dp
     }
     // 加载背景音乐配置
@@ -227,6 +248,27 @@ function fillForm(data: SystemConfig) {
     height: vc.height,
     seed: vc.seed,
   }
+  // Gemini 配置：处理可能的 null 值
+  const gm = data.model.gemini
+  form.model.gemini = {
+    apiKey: gm.apiKey,
+    baseUrl: gm.baseUrl,
+    modelImage: gm.modelImage,
+    resolution: gm.resolution ?? '2048*2048',
+    aspectRatio: gm.aspectRatio ?? '',
+    imageSize: gm.imageSize ?? '2K',
+    width: gm.width,
+    height: gm.height,
+    seed: gm.seed,
+  }
+  // 视觉理解配置：处理可能的 null 值
+  const vs = data.model.vision
+  form.model.vision = {
+    enabled: vs.enabled ?? true,
+    apiKey: vs.apiKey,
+    baseUrl: vs.baseUrl,
+    modelVision: vs.modelVision,
+  }
 
   form.storage.storageType = data.storage.storageType
   form.storage.minio = { ...data.storage.minio }
@@ -252,7 +294,6 @@ function buildPayload(): SystemConfigUpdate {
   const qianwen: NonNullable<NonNullable<SystemConfigUpdate['model']>['qianwen']> = {}
   if (ds.apiKey && !ds.apiKey.includes('****')) qianwen.apiKey = ds.apiKey
   if (ds.baseUrl) qianwen.baseUrl = ds.baseUrl
-  if (ds.modelVision) qianwen.modelVision = ds.modelVision
   if (ds.modelImage) qianwen.modelImage = ds.modelImage
   qianwen.workspaceId = ds.workspaceId
   if (ds.region) qianwen.region = ds.region
@@ -304,6 +345,27 @@ function buildPayload(): SystemConfigUpdate {
   volcengine.height = vc.height
   volcengine.seed = vc.seed
   if (Object.keys(volcengine).length > 0) model.volcengine = volcengine
+  // Gemini
+  const gm = form.model.gemini
+  const gemini: NonNullable<NonNullable<SystemConfigUpdate['model']>['gemini']> = {}
+  if (gm.apiKey && !gm.apiKey.includes('****')) gemini.apiKey = gm.apiKey
+  if (gm.baseUrl) gemini.baseUrl = gm.baseUrl
+  if (gm.modelImage) gemini.modelImage = gm.modelImage
+  if (gm.resolution) gemini.resolution = gm.resolution
+  if (gm.aspectRatio) gemini.aspectRatio = gm.aspectRatio
+  if (gm.imageSize) gemini.imageSize = gm.imageSize
+  gemini.width = gm.width
+  gemini.height = gm.height
+  gemini.seed = gm.seed
+  if (Object.keys(gemini).length > 0) model.gemini = gemini
+  // 视觉理解
+  const vs = form.model.vision
+  const vision: NonNullable<NonNullable<SystemConfigUpdate['model']>['vision']> = {}
+  vision.enabled = vs.enabled
+  if (vs.apiKey && !vs.apiKey.includes('****')) vision.apiKey = vs.apiKey
+  if (vs.baseUrl) vision.baseUrl = vs.baseUrl
+  if (vs.modelVision) vision.modelVision = vs.modelVision
+  if (Object.keys(vision).length > 0) model.vision = vision
   payload.model = model
 
   // 存储配置
@@ -588,9 +650,6 @@ onMounted(() => {
                     />
                     <div class="field-hint">DashScope API 基础地址；若配置了工作空间 ID 且此处留空，则自动使用专属端点</div>
                   </el-form-item>
-                  <el-form-item label="视觉理解模型">
-                    <el-input v-model="form.model.qianwen.modelVision" placeholder="如 qwen3-vl-plus" />
-                  </el-form-item>
                   <el-form-item label="图像生成模型">
                     <el-input v-model="form.model.qianwen.modelImage" placeholder="如 qwen-image-3.0-pro" />
                   </el-form-item>
@@ -782,7 +841,112 @@ onMounted(() => {
                   </el-form-item>
                 </div>
               </el-tab-pane>
+
+              <el-tab-pane label="Gemini (Google)" name="gemini">
+                <div class="form-grid">
+                  <el-form-item label="API Key">
+                    <el-input
+                      v-model="form.model.gemini.apiKey"
+                      placeholder="脱敏显示，如需修改请清空后输入新值"
+                      show-password
+                    />
+                    <div class="field-hint">敏感字段，保存时若仍含 **** 将跳过写入。在 Boft / Google AI Studio 获取</div>
+                  </el-form-item>
+                  <el-form-item label="接口基础地址">
+                    <el-input
+                      v-model="form.model.gemini.baseUrl"
+                      placeholder="https://api-direct.boft.ai"
+                    />
+                    <div class="field-hint">Gemini 原生 generateContent 网关根地址，默认 Boft 中转</div>
+                  </el-form-item>
+                  <el-form-item label="图像生成模型">
+                    <el-input
+                      v-model="form.model.gemini.modelImage"
+                      placeholder="如 gemini-3-pro-image-preview"
+                    />
+                    <div class="field-hint">Nano Banana Pro：gemini-3-pro-image-preview；Nano Banana：gemini-2.5-flash-image</div>
+                  </el-form-item>
+                  <el-form-item label="输出比例">
+                    <el-select v-model="form.model.gemini.aspectRatio" placeholder="自动" clearable filterable allow-create>
+                      <el-option label="1:1（方形）" value="1:1" />
+                      <el-option label="3:2" value="3:2" />
+                      <el-option label="2:3" value="2:3" />
+                      <el-option label="3:4" value="3:4" />
+                      <el-option label="4:3" value="4:3" />
+                      <el-option label="4:5" value="4:5" />
+                      <el-option label="5:4" value="5:4" />
+                      <el-option label="9:16（竖版）" value="9:16" />
+                      <el-option label="16:9（横版）" value="16:9" />
+                      <el-option label="21:9（宽幅）" value="21:9" />
+                    </el-select>
+                    <div class="field-hint">Gemini imageConfig.aspectRatio；留空则由分辨率/技能比例推断</div>
+                  </el-form-item>
+                  <el-form-item label="尺寸档位">
+                    <el-select v-model="form.model.gemini.imageSize" clearable>
+                      <el-option label="1K（约 1024px）" value="1K" />
+                      <el-option label="2K（约 2048px）" value="2K" />
+                      <el-option label="4K（约 4096px）" value="4K" />
+                    </el-select>
+                    <div class="field-hint">Gemini imageConfig.imageSize；留空则由分辨率长边自动映射</div>
+                  </el-form-item>
+                  <el-form-item label="分辨率">
+                    <el-input v-model="form.model.gemini.resolution" placeholder="如 1024*1024、768*1024，优先于宽高" />
+                    <div class="field-hint">仅用于推断比例与档位；显式设置上方比例/档位后此项可不填</div>
+                  </el-form-item>
+                  <el-form-item label="图片宽度（像素）">
+                    <el-input-number v-model="form.model.gemini.width" :min="256" :max="4096" :step="8" controls-position="right" placeholder="留空不设置" />
+                  </el-form-item>
+                  <el-form-item label="图片高度（像素）">
+                    <el-input-number v-model="form.model.gemini.height" :min="256" :max="4096" :step="8" controls-position="right" placeholder="留空不设置" />
+                  </el-form-item>
+                  <el-form-item label="随机数种子">
+                    <el-input-number v-model="form.model.gemini.seed" :min="0" controls-position="right" placeholder="留空使用随机种子" />
+                    <div class="field-hint">固定种子可使生成结果相对稳定</div>
+                  </el-form-item>
+                </div>
+              </el-tab-pane>
             </el-tabs>
+
+            <!-- 视觉理解模型配置（独立于图像生成模型） -->
+            <div class="vision-block">
+              <div class="vision-block__header">
+                <span class="vision-block__title font-display">视觉理解模型</span>
+                <el-switch
+                  v-model="form.model.vision.enabled"
+                  active-text="启用"
+                  inactive-text="停用"
+                  :active-value="true"
+                  :inactive-value="false"
+                />
+              </div>
+              <p class="vision-block__desc">
+                用于图片内容分析、画册 AI 排序与 IP 角色分析。停用后相关功能将回退为"无分析"模式。
+              </p>
+              <div v-if="form.model.vision.enabled" class="form-grid vision-block__grid">
+                <el-form-item label="API Key">
+                  <el-input
+                    v-model="form.model.vision.apiKey"
+                    placeholder="脱敏显示，如需修改请清空后输入新值"
+                    show-password
+                  />
+                  <div class="field-hint">敏感字段，保存时若仍含 **** 将跳过写入</div>
+                </el-form-item>
+                <el-form-item label="接口基础地址">
+                  <el-input
+                    v-model="form.model.vision.baseUrl"
+                    placeholder="如 https://dashscope.aliyuncs.com/api/v1"
+                  />
+                  <div class="field-hint">留空默认使用 DashScope 共享端点</div>
+                </el-form-item>
+                <el-form-item label="视觉模型名">
+                  <el-input
+                    v-model="form.model.vision.modelVision"
+                    placeholder="如 qwen3-vl-flash"
+                  />
+                  <div class="field-hint">视觉理解模型（分析图片内容用），可不同于图像生成模型</div>
+                </el-form-item>
+              </div>
+            </div>
           </section>
 
           <!-- 存储配置 -->
@@ -1298,6 +1462,35 @@ onMounted(() => {
   color: var(--color-text-secondary);
   margin-top: 4px;
   line-height: 1.4;
+}
+
+/* 视觉理解模型独立配置区块 */
+.vision-block {
+  margin-top: 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+}
+.vision-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vision-block__title {
+  font-size: 16px;
+  color: var(--color-text);
+  letter-spacing: 0.06em;
+}
+.vision-block__desc {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+.vision-block__grid {
+  margin-top: 14px;
 }
 
 /* 启用模型多选框：茶色底、朱砂勾选 */

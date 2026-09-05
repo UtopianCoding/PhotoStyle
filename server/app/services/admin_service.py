@@ -21,6 +21,7 @@ from app.schemas.admin import (
     AdminUserItem,
     AppConfigRead,
     DashScopeConfigRead,
+    GeminiConfigRead,
     MinIOConfigRead,
     MinimaxConfigRead,
     ModelConfig,
@@ -29,6 +30,7 @@ from app.schemas.admin import (
     StorageConfig,
     SystemConfigRead,
     SystemConfigUpdate,
+    VisionConfigRead,
     VolcengineConfigRead,
 )
 from app.schemas.user import (
@@ -113,6 +115,7 @@ class AdminService:
         dl = store.get_config("dalle") or {}
         mm = store.get_config("minimax") or {}
         vc = store.get_config("volcengine") or {}
+        gm = store.get_config("gemini") or {}
 
         return SystemConfigRead(
             model=ModelConfig(
@@ -165,6 +168,23 @@ class AdminService:
                     height=vc.get("height"),
                     seed=vc.get("seed"),
                     resolution=vc.get("resolution"),
+                ),
+                gemini=GeminiConfigRead(
+                    api_key=mask_secret(gm.get("api_key", "")),
+                    base_url=gm.get("base_url", ""),
+                    model_image=gm.get("model_image", ""),
+                    width=gm.get("width"),
+                    height=gm.get("height"),
+                    seed=gm.get("seed"),
+                    resolution=gm.get("resolution"),
+                    aspect_ratio=gm.get("aspect_ratio"),
+                    image_size=gm.get("image_size"),
+                ),
+                vision=VisionConfigRead(
+                    enabled=store.is_vision_enabled(),
+                    api_key=mask_secret(store.get_vision_config().get("api_key", "")),
+                    base_url=store.get_vision_config().get("base_url", ""),
+                    model_vision=store.get_vision_config().get("model_vision", ""),
                 ),
             ),
             # 存储 / 应用配置仍从 settings（.env）读取
@@ -346,6 +366,44 @@ class AdminService:
             if v.resolution is not None:
                 current["resolution"] = v.resolution.strip()
             await store.save_provider_config("volcengine", _sanitize_config(current))
+
+        # Gemini
+        if model.gemini is not None:
+            g = model.gemini
+            current = dict(store.get_config("gemini") or {})
+            if not _should_skip_secret(g.api_key):
+                current["api_key"] = g.api_key
+            if g.base_url is not None:
+                current["base_url"] = g.base_url
+            if g.model_image is not None:
+                current["model_image"] = g.model_image
+            if g.width is not None:
+                current["width"] = g.width
+            if g.height is not None:
+                current["height"] = g.height
+            if g.seed is not None:
+                current["seed"] = g.seed
+            if g.resolution is not None:
+                current["resolution"] = g.resolution.strip()
+            if g.aspect_ratio is not None:
+                current["aspect_ratio"] = g.aspect_ratio.strip()
+            if g.image_size is not None:
+                current["image_size"] = g.image_size.strip().upper()
+            await store.save_provider_config("gemini", _sanitize_config(current))
+
+        # 视觉理解模型（独立配置 _vision）
+        if model.vision is not None:
+            v = model.vision
+            current = dict(store.get_vision_config())
+            if v.enabled is not None:
+                current["enabled"] = bool(v.enabled)
+            if not _should_skip_secret(v.api_key):
+                current["api_key"] = v.api_key
+            if v.base_url is not None:
+                current["base_url"] = v.base_url.strip().strip("`").strip()
+            if v.model_vision is not None:
+                current["model_vision"] = v.model_vision.strip()
+            await store.save_vision_config(current)
 
     # -------------------- 存储/应用配置写入 .env --------------------
 

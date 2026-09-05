@@ -108,7 +108,7 @@ class ImageProcessor:
         return output.getvalue()
 
     @classmethod
-    def generate_thumbnail(cls, image_bytes: bytes, size: Tuple[int, int] = (256, 256)) -> bytes:
+    def generate_thumbnail(cls, image_bytes: bytes, size: Tuple[int, int] = (512, 512)) -> bytes:
         """
         生成缩略图。
 
@@ -116,7 +116,7 @@ class ImageProcessor:
 
         Args:
             image_bytes: 原始图片字节流
-            size: 目标缩略图尺寸 (width, height)，默认 256x256
+            size: 目标缩略图尺寸 (width, height)，默认 512x512
 
         Returns:
             缩略图字节流

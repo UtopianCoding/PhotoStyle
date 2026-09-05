@@ -79,6 +79,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   dalle: 'GPT Image 2',
   minimax: 'MiniMax',
   volcengine: '火山引擎',
+  gemini: 'Gemini',
   doubao: '豆包',
 }
 function providerLabel(pid: string): string {
@@ -202,7 +203,7 @@ watch([skillId, status], onFilterChange)
       >
         <!-- 输入原图 -->
         <div class="conv-card__input">
-          <img :src="item.inputImageUrl" :alt="skillName(item.skillId)" loading="lazy" decoding="async" />
+          <img v-lazy="item.inputImageUrl" :alt="skillName(item.skillId)" decoding="async" />
         </div>
         <!-- 原图 → 成果 的转化意象 -->
         <span class="conv-card__arrow" aria-hidden="true">→</span>

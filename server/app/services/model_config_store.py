@@ -16,7 +16,7 @@ from app.database import async_session_maker
 logger = logging.getLogger(__name__)
 
 # 所有支持的 Provider ID 列表
-ALL_PROVIDER_IDS = ["qianwen", "dalle", "minimax", "volcengine", "doubao"]
+ALL_PROVIDER_IDS = ["qianwen", "dalle", "minimax", "volcengine", "gemini", "doubao"]
 
 
 class ModelConfigStore:
@@ -81,6 +81,48 @@ class ModelConfigStore:
 
         self._configs["_bgm"] = {"music_url": music_url.strip()}
         logger.info("背景音乐 URL 已保存: %s", music_url.strip() or "(使用内置 mp3)")
+
+    # -------------------- 视觉理解模型配置（独立于图像生成） --------------------
+
+    def get_vision_config(self) -> dict[str, Any]:
+        """
+        获取视觉理解模型独立配置。
+
+        键结构（存储于 _vision）：
+            {enabled, api_key, base_url, model_vision}
+
+        兼容回退：旧数据中尚未单独配置视觉理解时，继承千问（qianwen）
+        的 api_key / base_url / model_vision，enabled 默认 True，
+        避免存量部署升级后视觉分析立即失效。
+        """
+        cfg = self._configs.get("_vision")
+        if cfg:
+            return cfg
+        # 未单独配置 → 从千问配置回退（向后兼容）
+        qw = self._configs.get("qianwen") or {}
+        fallback = {
+            "enabled": True,
+            "api_key": qw.get("api_key", ""),
+            "base_url": qw.get("base_url", ""),
+            "model_vision": qw.get("model_vision", ""),
+        }
+        return fallback
+
+    def is_vision_enabled(self) -> bool:
+        """视觉理解模型是否启用"""
+        return bool(self.get_vision_config().get("enabled", True))
+
+    async def save_vision_config(self, config: dict[str, Any]) -> None:
+        """保存视觉理解模型独立配置到 DB 并更新内存"""
+        from app.repositories.provider_config_repo import ProviderConfigRepository
+
+        async with async_session_maker() as session:
+            repo = ProviderConfigRepository(session)
+            await repo.upsert("_vision", json.dumps(config, ensure_ascii=False))
+            await session.commit()
+
+        self._configs["_vision"] = config
+        logger.info("视觉理解模型配置已保存到 DB: enabled=%s", config.get("enabled"))
 
     # -------------------- 写入 --------------------
 
@@ -250,6 +292,14 @@ class ModelConfigStore:
                 "model_image": settings.volcengine.model_image,
                 "watermark": settings.volcengine.watermark,
                 "resolution": "2048*2048",
+            },
+            "gemini": {
+                "api_key": settings.gemini.api_key.get_secret_value(),
+                "base_url": settings.gemini.base_url,
+                "model_image": settings.gemini.model_image,
+                "resolution": "2048*2048",
+                "aspect_ratio": "",
+                "image_size": "",
             },
             "doubao": {
                 "access_key": settings.doubao.access_key.get_secret_value(),

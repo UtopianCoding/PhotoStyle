@@ -90,9 +90,25 @@ class IPCharacterAnalyzer:
         from dashscope import MultiModalConversation
         from http import HTTPStatus
 
-        api_key = settings.dashscope.api_key.get_secret_value()
+        # 从独立视觉理解配置读取（后台可热更新；未单独配置时回退千问/.env）
+        import dashscope
+        from app.ai.dashscope_utils import normalize_dashscope_base_url
+        from app.services.model_config_store import model_config_store
+
+        cfg = model_config_store.get_vision_config()
+        if not cfg.get("enabled", True):
+            raise AIServiceException("视觉理解模型已停用，请先在后台配置中开启")
+        api_key = cfg.get("api_key") or settings.dashscope.api_key.get_secret_value()
         if not api_key:
             raise AIServiceException("DashScope API Key 未配置")
+
+        base_url = (cfg.get("base_url") or "").strip()
+        dashscope.base_http_api_url = (
+            normalize_dashscope_base_url(base_url)
+            if base_url
+            else "https://dashscope.aliyuncs.com/api/v1"
+        )
+        self.model = (cfg.get("model_vision") or "").strip() or self.model
 
         messages = [
             {
